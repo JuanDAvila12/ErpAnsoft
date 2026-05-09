@@ -1,9 +1,12 @@
 version: '3.8'
 
 services:
-  db:
+  # ============================================================
+  # PostgreSQL - Base de datos principal
+  # ============================================================
+  postgres:
     image: postgres:15-alpine
-    container_name: spi_erp_db
+    container_name: spi-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: spi_erp
@@ -20,57 +23,70 @@ services:
       timeout: 5s
       retries: 5
 
+  # ============================================================
+  # API Node.js - Backend principal (CRUD, Auth, Ventas, Catálogos)
+  # ============================================================
   api-node:
     build:
       context: ./api-node
       dockerfile: Dockerfile
-    container_name: spi_erp_api_node
+    container_name: spi-api-node
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      NODE_ENV: development
-      DB_HOST: db
+      PORT: 3000
+      DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: spi_erp
       DB_USER: spi_user
       DB_PASSWORD: spi_password
+      JWT_SECRET: spi_erp_jwt_secret_key_2026
+      NODE_ENV: development
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
     volumes:
       - ./api-node:/app
       - /app/node_modules
 
+  # ============================================================
+  # API Python - Backend de procesamiento (Fiscal CFDI 4.0)
+  # ============================================================
   api-python:
     build:
       context: ./api-python
       dockerfile: Dockerfile
-    container_name: spi_erp_api_python
+    container_name: spi-api-python
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      PYTHONUNBUFFERED: 1
-      DB_HOST: db
+      DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: spi_erp
       DB_USER: spi_user
       DB_PASSWORD: spi_password
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
     volumes:
       - ./api-python:/app
 
+  # ============================================================
+  # Frontend Vue.js - Interfaz de usuario
+  # ============================================================
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: spi_erp_frontend
+    container_name: spi-frontend
     restart: unless-stopped
     ports:
       - "5173:5173"
+    environment:
+      VITE_API_NODE_URL: http://localhost:3000
+      VITE_API_PYTHON_URL: http://localhost:8000
     depends_on:
       - api-node
       - api-python
