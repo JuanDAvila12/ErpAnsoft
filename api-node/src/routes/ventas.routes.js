@@ -8,7 +8,9 @@ const { authMiddleware } = require('../middleware/auth');
  * Registra una nueva venta con transacción SQL.
  * Body esperado:
  * {
- *   cliente_id: number (opcional),
+ *   entidad_cliente_id: number (obligatorio),
+ *   entidad_vendedor_id: number (opcional),
+ *   almacen_id: number (opcional, default 1),
  *   metodo_pago: string (opcional, default 'efectivo'),
  *   articulos: [
  *     { articulo_id: number, cantidad: number }
@@ -17,9 +19,16 @@ const { authMiddleware } = require('../middleware/auth');
  */
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { cliente_id, metodo_pago, articulos } = req.body;
+    const { entidad_cliente_id, entidad_vendedor_id, almacen_id, metodo_pago, articulos } = req.body;
 
     // Validaciones
+    if (!entidad_cliente_id) {
+      return res.status(400).json({
+        error: 'Datos inválidos',
+        mensaje: 'entidad_cliente_id es obligatorio. Debe ser una entidad con rol de cliente.',
+      });
+    }
+
     if (!articulos || !Array.isArray(articulos) || articulos.length === 0) {
       return res.status(400).json({
         error: 'Datos inválidos',
@@ -37,7 +46,9 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 
     const venta = await VentasModel.crearVenta({
-      cliente_id,
+      entidad_cliente_id,
+      entidad_vendedor_id,
+      almacen_id,
       metodo_pago,
       articulos,
     });

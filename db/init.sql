@@ -355,11 +355,12 @@ CREATE TABLE IF NOT EXISTS inventario_movimientos (
 -- 10. TABLAS TRANSACCIONALES (Ventas, Detalle, Contabilidad)
 -- ============================================================
 
--- Tabla de ventas (modificada con entidad_id como cliente)
+-- Tabla de ventas (modificada con modelo de entidades)
 CREATE TABLE IF NOT EXISTS ventas (
     id              SERIAL PRIMARY KEY,
     cliente_id      INTEGER,
     entidad_cliente_id INTEGER REFERENCES entidades(id),
+    entidad_vendedor_id INTEGER REFERENCES entidades(id),
     folio           VARCHAR(50) NOT NULL UNIQUE,
     fecha           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     total           DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -371,15 +372,30 @@ CREATE TABLE IF NOT EXISTS ventas (
 );
 
 -- Tabla de detalle de ventas
+-- En ERP financiero nunca se borran transacciones, se cancelan cambiando estatus.
 CREATE TABLE IF NOT EXISTS ventas_detalle (
     id              SERIAL PRIMARY KEY,
-    venta_id        INTEGER NOT NULL REFERENCES ventas(id) ON DELETE CASCADE,
+    venta_id        INTEGER NOT NULL REFERENCES ventas(id) ON DELETE RESTRICT,
     articulo_id     INTEGER NOT NULL REFERENCES articulos(id),
     cantidad        DECIMAL(12,2) NOT NULL,
     precio_unitario DECIMAL(12,2) NOT NULL,
     subtotal        DECIMAL(12,2) NOT NULL,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Aplicar cambio también en BD existentes (por si ya se ejecutó el script)
+DO $$ BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'ventas_detalle_venta_id_fkey'
+        AND constraint_type = 'FOREIGN KEY'
+    ) THEN
+        ALTER TABLE ventas_detalle DROP CONSTRAINT ventas_detalle_venta_id_fkey;
+    END IF;
+END $$;
+
+ALTER TABLE ventas_detalle ADD CONSTRAINT ventas_detalle_venta_id_fkey
+    FOREIGN KEY (venta_id) REFERENCES ventas(id) ON DELETE RESTRICT;
 
 -- Tabla de asientos contables
 CREATE TABLE IF NOT EXISTS asientos_contables (
@@ -487,3 +503,194 @@ CREATE INDEX IF NOT EXISTS idx_ventas_detalle_articulo_id ON ventas_detalle(arti
 CREATE INDEX IF NOT EXISTS idx_asientos_contables_referencia ON asientos_contables(referencia_tipo, referencia_id);
 CREATE INDEX IF NOT EXISTS idx_asientos_contables_cuenta ON asientos_contables(cuenta_contable);
 CREATE INDEX IF NOT EXISTS idx_asientos_contables_fecha ON asientos_contables(fecha);
+
+-- ============================================================
+-- 13. SISTEMA DE AUDITORÍA ESTILO SAP (CDHDR/CDPOS)
+-- ============================================================
+
+-- Tabla de cabecera de log de modificaciones (como CDHDR de SAP)
+CREATE TABLE IF NOT EXISTS log_modificaciones_cabecera (
+    id              SERIAL PRIMARY KEY,
+    tabla_afectada  VARCHAR(100) NOT NULL,
+    registro_id     INTEGER NOT NULL,
+    tipo_operacion  CHAR(1) NOT NULL CHECK (tipo_operacion IN ('I', 'U', 'D')),
+    usuario_id      INTEGER REFERENCES usuarios(id),
+    fecha           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ip_origen       VARCHAR(45),
+    comentario      TEXT
+);
+
+-- Tabla de detalle de log de modificaciones (como CDPOS de SAP)
+CREATE TABLE IF NOT EXISTS log_modificaciones_detalle (
+    id              SERIAL PRIMARY KEY,
+    cabecera_id     INTEGER NOT NULL REFERENCES log_modificaciones_cabecera(id) ON DELETE CASCADE,
+    campo_afectado  VARCHAR(100) NOT NULL,
+    valor_anterior  TEXT,
+    valor_nuevo     TEXT
+);
+
+-- Índices para auditoría
+CREATE INDEX IF NOT EXISTS idx_log_cabecera_tabla_registro ON log_modificaciones_cabecera(tabla_afectada, registro_id);
+CREATE INDEX IF NOT EXISTS idx_log_cabecera_fecha ON log_modificaciones_cabecera(fecha);
+CREATE INDEX IF NOT EXISTS idx_log_cabecera_usuario ON log_modificaciones_cabecera(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_log_detalle_cabecera ON log_modificaciones_detalle(cabecera_id);
+
+-- ============================================================
+-- 14. FUNCIÓN Y TRIGGERS DE AUDITORÍA
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION fn_auditar_cambios()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_cabecera_id INTEGER;
+    v_ip VARCHAR(45);
+    v_comentario TEXT;
+    v_campos_excluidos TEXT[] := ARRAY['created_at', 'updated_at', 'creado_en'];
+    v_col_name TEXT;
+    v_old_val TEXT;
+    v_new_val TEXT;
+BEGIN
+    -- Obtener IP desde la variable de sesión (se setea desde la app)
+    v_ip := current_setting('app.ip_origen', true);
+    IF v_ip IS NULL OR v_ip = '' THEN
+        v_ip := '127.0.0.1';
+    END IF;
+
+    v_comentario := current_setting('app.comentario', true);
+    IF v_comentario IS NULL THEN
+        v_comentario := '';
+    END IF;
+
+    -- ============================================================
+    -- OPERACIÓN: INSERT
+    -- ============================================================
+    IF TG_OP = 'INSERT' THEN
+        INSERT INTO log_modificaciones_cabecera (
+            tabla_afectada, registro_id, tipo_operacion, usuario_id, ip_origen, comentario
+        ) VALUES (
+            TG_TABLE_NAME, NEW.id, 'I',
+            COALESCE(current_setting('app.usuario_id', true)::INTEGER, NULL),
+            v_ip, v_comentario
+        )
+        RETURNING id INTO v_cabecera_id;
+
+        -- Registrar todos los valores insertados como valor_nuevo
+        FOR v_col_name IN
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = TG_TABLE_NAME
+              AND column_name != 'id'
+              AND column_name != ALL(v_campos_excluidos)
+            ORDER BY ordinal_position
+        LOOP
+            EXECUTE format('SELECT ($1).%I::TEXT', v_col_name) USING NEW INTO v_new_val;
+            IF v_new_val IS NOT NULL THEN
+                INSERT INTO log_modificaciones_detalle (cabecera_id, campo_afectado, valor_anterior, valor_nuevo)
+                VALUES (v_cabecera_id, v_col_name, NULL, v_new_val);
+            END IF;
+        END LOOP;
+
+        RETURN NEW;
+
+    -- ============================================================
+    -- OPERACIÓN: DELETE
+    -- ============================================================
+    ELSIF TG_OP = 'DELETE' THEN
+        INSERT INTO log_modificaciones_cabecera (
+            tabla_afectada, registro_id, tipo_operacion, usuario_id, ip_origen, comentario
+        ) VALUES (
+            TG_TABLE_NAME, OLD.id, 'D',
+            COALESCE(current_setting('app.usuario_id', true)::INTEGER, NULL),
+            v_ip, v_comentario
+        )
+        RETURNING id INTO v_cabecera_id;
+
+        -- Registrar todos los valores eliminados como valor_anterior
+        FOR v_col_name IN
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = TG_TABLE_NAME
+              AND column_name != 'id'
+              AND column_name != ALL(v_campos_excluidos)
+            ORDER BY ordinal_position
+        LOOP
+            EXECUTE format('SELECT ($1).%I::TEXT', v_col_name) USING OLD INTO v_old_val;
+            IF v_old_val IS NOT NULL THEN
+                INSERT INTO log_modificaciones_detalle (cabecera_id, campo_afectado, valor_anterior, valor_nuevo)
+                VALUES (v_cabecera_id, v_col_name, v_old_val, NULL);
+            END IF;
+        END LOOP;
+
+        RETURN OLD;
+
+    -- ============================================================
+    -- OPERACIÓN: UPDATE
+    -- ============================================================
+    ELSIF TG_OP = 'UPDATE' THEN
+        INSERT INTO log_modificaciones_cabecera (
+            tabla_afectada, registro_id, tipo_operacion, usuario_id, ip_origen, comentario
+        ) VALUES (
+            TG_TABLE_NAME, NEW.id, 'U',
+            COALESCE(current_setting('app.usuario_id', true)::INTEGER, NULL),
+            v_ip, v_comentario
+        )
+        RETURNING id INTO v_cabecera_id;
+
+        -- Comparar OLD vs NEW campo por campo
+        FOR v_col_name IN
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = TG_TABLE_NAME
+              AND column_name != 'id'
+              AND column_name != ALL(v_campos_excluidos)
+            ORDER BY ordinal_position
+        LOOP
+            EXECUTE format('SELECT ($1).%I::TEXT', v_col_name) USING OLD INTO v_old_val;
+            EXECUTE format('SELECT ($1).%I::TEXT', v_col_name) USING NEW INTO v_new_val;
+
+            IF v_old_val IS DISTINCT FROM v_new_val THEN
+                INSERT INTO log_modificaciones_detalle (cabecera_id, campo_afectado, valor_anterior, valor_nuevo)
+                VALUES (v_cabecera_id, v_col_name, v_old_val, v_new_val);
+            END IF;
+        END LOOP;
+
+        RETURN NEW;
+    END IF;
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
+-- TRIGGERS DE AUDITORÍA POR TABLA
+-- ============================================================
+
+-- Trigger para ventas
+DROP TRIGGER IF EXISTS trg_auditar_ventas ON ventas;
+CREATE TRIGGER trg_auditar_ventas
+AFTER INSERT OR UPDATE OR DELETE ON ventas
+FOR EACH ROW EXECUTE FUNCTION fn_auditar_cambios();
+
+-- Trigger para ventas_detalle
+DROP TRIGGER IF EXISTS trg_auditar_ventas_detalle ON ventas_detalle;
+CREATE TRIGGER trg_auditar_ventas_detalle
+AFTER INSERT OR UPDATE OR DELETE ON ventas_detalle
+FOR EACH ROW EXECUTE FUNCTION fn_auditar_cambios();
+
+-- Trigger para inventario_movimientos
+DROP TRIGGER IF EXISTS trg_auditar_inventario_movimientos ON inventario_movimientos;
+CREATE TRIGGER trg_auditar_inventario_movimientos
+AFTER INSERT OR UPDATE OR DELETE ON inventario_movimientos
+FOR EACH ROW EXECUTE FUNCTION fn_auditar_cambios();
+
+-- Trigger para articulos
+DROP TRIGGER IF EXISTS trg_auditar_articulos ON articulos;
+CREATE TRIGGER trg_auditar_articulos
+AFTER INSERT OR UPDATE OR DELETE ON articulos
+FOR EACH ROW EXECUTE FUNCTION fn_auditar_cambios();
+
+-- Trigger para entidades
+DROP TRIGGER IF EXISTS trg_auditar_entidades ON entidades;
+CREATE TRIGGER trg_auditar_entidades
+AFTER INSERT OR UPDATE OR DELETE ON entidades
+FOR EACH ROW EXECUTE FUNCTION fn_auditar_cambios();

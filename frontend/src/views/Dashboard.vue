@@ -126,21 +126,21 @@
                   <v-list-item-title>Entidad</v-list-item-title>
                   <v-list-item-subtitle>{{ usuario?.entidad_razon_social }}</v-list-item-subtitle>
                 </v-list-item>
-                <v-list-item v-if="usuario?.roles_entidad?.length">
+                <v-list-item v-if="usuario?.entidad_roles?.length">
                   <template v-slot:prepend>
                     <v-icon>mdi-badge-account</v-icon>
                   </template>
                   <v-list-item-title>Roles de Entidad</v-list-item-title>
                   <v-list-item-subtitle>
                     <v-chip
-                      v-for="rol in usuario.roles_entidad"
-                      :key="rol"
+                      v-for="er in usuario.entidad_roles"
+                      :key="er.rol"
                       size="x-small"
                       class="mr-1"
                       color="primary"
                       variant="flat"
                     >
-                      {{ rol }}
+                      {{ er.rol }}
                     </v-chip>
                   </v-list-item-subtitle>
                 </v-list-item>

@@ -105,11 +105,23 @@ async function handleLogin() {
       password: password.value,
     })
 
-    const { token, usuario } = response.data
+    const { token } = response.data
 
-    // Guardar token y datos del usuario
+    // Guardar solo el token (login ya no devuelve datos del usuario por seguridad)
     localStorage.setItem('token', token)
-    localStorage.setItem('usuario', JSON.stringify(usuario))
+
+    // Obtener perfil del usuario desde el endpoint protegido
+    try {
+      const perfilResponse = await axios.get('/api/v1/auth/perfil', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      const usuario = perfilResponse.data.datos
+      localStorage.setItem('usuario', JSON.stringify(usuario))
+    } catch (e) {
+      console.warn('No se pudo obtener perfil inmediatamente, se cargará en dashboard')
+    }
 
     // Redirigir al dashboard
     router.push('/dashboard')

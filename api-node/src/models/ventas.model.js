@@ -2,16 +2,56 @@ const pool = require('../db');
 
 const VentasModel = {
   /**
+   * Valida que una entidad tenga un rol específico.
+   */
+  async _validarEntidadConRol(entidadId, rolEsperado) {
+    const result = await pool.query(
+      `SELECT e.id, e.razon_social, e.rfc
+       FROM entidades e
+       JOIN entidad_roles er ON er.entidad_id = e.id
+       WHERE e.id = $1 AND e.activo = true AND er.rol = $2::entidad_rol_enum`,
+      [entidadId, rolEsperado]
+    );
+    return result.rows[0] || null;
+  },
+
+  /**
    * Crea una venta completa usando una transacción SQL.
    * Inserta en ventas, ventas_detalle, inventario_movimientos y asientos_contables.
    */
-  async crearVenta({ cliente_id, metodo_pago, articulos }) {
+  async crearVenta({ entidad_cliente_id, entidad_vendedor_id, almacen_id, metodo_pago, articulos }) {
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
 
-      // 1. Generar folio único
+      // 1. Validar que entidad_cliente_id exista y tenga rol 'cliente'
+      const cliente = await this._validarEntidadConRol(entidad_cliente_id, 'cliente');
+      if (!cliente) {
+        throw new Error(`La entidad con ID ${entidad_cliente_id} no existe como cliente activo o no tiene el rol 'cliente'.`);
+      }
+
+      // 2. Si se envía entidad_vendedor_id, validar que tenga rol 'vendedor'
+      if (entidad_vendedor_id) {
+        const vendedor = await this._validarEntidadConRol(entidad_vendedor_id, 'vendedor');
+        if (!vendedor) {
+          throw new Error(`La entidad con ID ${entidad_vendedor_id} no existe como vendedor activo o no tiene el rol 'vendedor'.`);
+        }
+      }
+
+      // 3. Si se envía almacen_id, validar que exista
+      const almacenId = almacen_id || 1; // Default: Almacén General (id=1)
+      if (almacen_id) {
+        const almacenResult = await client.query(
+          'SELECT id FROM almacenes WHERE id = $1 AND activo = true',
+          [almacen_id]
+        );
+        if (almacenResult.rows.length === 0) {
+          throw new Error(`Almacén con ID ${almacen_id} no encontrado o inactivo.`);
+        }
+      }
+
+      // 4. Generar folio único
       const folioResult = await client.query(
         `SELECT 'VTA-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || 
                 LPAD(COALESCE(MAX(id), 0)::TEXT, 4, '0') AS folio
@@ -19,7 +59,7 @@ const VentasModel = {
       );
       const folio = folioResult.rows[0].folio;
 
-      // 2. Calcular total de la venta
+      // 5. Calcular total de la venta
       let total = 0;
       for (const art of articulos) {
         const artResult = await client.query(
@@ -33,16 +73,16 @@ const VentasModel = {
         total += precio * art.cantidad;
       }
 
-      // 3. Insertar en ventas
+      // 6. Insertar en ventas (con modelo de entidades)
       const ventaResult = await client.query(
-        `INSERT INTO ventas (cliente_id, folio, total, metodo_pago, estatus)
-         VALUES ($1, $2, $3, $4, 'completada')
+        `INSERT INTO ventas (entidad_cliente_id, entidad_vendedor_id, folio, total, metodo_pago, estatus)
+         VALUES ($1, $2, $3, $4, $5, 'completada')
          RETURNING *`,
-        [cliente_id || null, folio, total, metodo_pago || 'efectivo']
+        [entidad_cliente_id, entidad_vendedor_id || null, folio, total, metodo_pago || 'efectivo']
       );
       const venta = ventaResult.rows[0];
 
-      // 4. Insertar detalle de ventas y movimientos de inventario
+      // 7. Insertar detalle de ventas y movimientos de inventario
       for (const art of articulos) {
         const artResult = await client.query(
           'SELECT precio_venta, costo_promedio FROM articulos WHERE id = $1',
@@ -58,15 +98,15 @@ const VentasModel = {
           [venta.id, art.articulo_id, art.cantidad, precio, subtotal]
         );
 
-        // Insertar movimiento de inventario (salida)
+        // Insertar movimiento de inventario (salida) con almacén
         await client.query(
-          `INSERT INTO inventario_movimientos (articulo_id, cantidad, tipo_movimiento)
-           VALUES ($1, $2, 'salida')`,
-          [art.articulo_id, art.cantidad]
+          `INSERT INTO inventario_movimientos (articulo_id, cantidad, tipo_movimiento, almacen_id)
+           VALUES ($1, $2, 'salida', $3)`,
+          [art.articulo_id, art.cantidad, almacenId]
         );
       }
 
-      // 5. Insertar asientos contables
+      // 8. Insertar asientos contables
       // Obtener el porcentaje de IVA de la configuración
       const ivaConfig = await client.query(
         "SELECT valor FROM configuracion_sistema WHERE clave = 'iva_porcentaje'"
@@ -98,24 +138,31 @@ const VentasModel = {
 
       await client.query('COMMIT');
 
-      // Retornar la venta completa con detalles
+      // Retornar la venta completa con detalles y datos de entidades
       const ventaCompleta = await client.query(
         `SELECT v.*, 
+                ec.razon_social AS cliente_nombre,
+                ec.rfc AS cliente_rfc,
+                ev.razon_social AS vendedor_nombre,
+                a.razon_social AS almacen_nombre,
                 json_agg(json_build_object(
                   'id', vd.id,
                   'articulo_id', vd.articulo_id,
-                  'articulo_nombre', a.nombre,
-                  'articulo_sku', a.sku,
+                  'articulo_nombre', art.nombre,
+                  'articulo_sku', art.sku,
                   'cantidad', vd.cantidad,
                   'precio_unitario', vd.precio_unitario,
                   'subtotal', vd.subtotal
                 )) AS detalles
          FROM ventas v
          LEFT JOIN ventas_detalle vd ON vd.venta_id = v.id
-         LEFT JOIN articulos a ON a.id = vd.articulo_id
+         LEFT JOIN articulos art ON art.id = vd.articulo_id
+         LEFT JOIN entidades ec ON ec.id = v.entidad_cliente_id
+         LEFT JOIN entidades ev ON ev.id = v.entidad_vendedor_id
+         LEFT JOIN almacenes a ON a.id = $2
          WHERE v.id = $1
-         GROUP BY v.id`,
-        [venta.id]
+         GROUP BY v.id, ec.razon_social, ec.rfc, ev.razon_social, a.razon_social`,
+        [venta.id, almacenId]
       );
 
       return ventaCompleta.rows[0];
@@ -128,11 +175,15 @@ const VentasModel = {
   },
 
   /**
-   * Obtiene todas las ventas.
+   * Obtiene todas las ventas con JOIN a entidades.
    */
   async findAll() {
     const result = await pool.query(
       `SELECT v.*,
+              ec.razon_social AS cliente_nombre,
+              ec.rfc AS cliente_rfc,
+              ev.razon_social AS vendedor_nombre,
+              al.nombre AS almacen_nombre,
               COALESCE(
                 (SELECT json_agg(json_build_object(
                   'id', vd.id,
@@ -149,17 +200,24 @@ const VentasModel = {
                 '[]'::json
               ) AS detalles
        FROM ventas v
+       LEFT JOIN entidades ec ON ec.id = v.entidad_cliente_id
+       LEFT JOIN entidades ev ON ev.id = v.entidad_vendedor_id
+       LEFT JOIN almacenes al ON al.id = 1
        ORDER BY v.fecha DESC`
     );
     return result.rows;
   },
 
   /**
-   * Obtiene una venta por ID.
+   * Obtiene una venta por ID con JOIN a entidades.
    */
   async findById(id) {
     const result = await pool.query(
       `SELECT v.*,
+              ec.razon_social AS cliente_nombre,
+              ec.rfc AS cliente_rfc,
+              ev.razon_social AS vendedor_nombre,
+              al.nombre AS almacen_nombre,
               json_agg(json_build_object(
                 'id', vd.id,
                 'articulo_id', vd.articulo_id,
@@ -172,8 +230,11 @@ const VentasModel = {
        FROM ventas v
        LEFT JOIN ventas_detalle vd ON vd.venta_id = v.id
        LEFT JOIN articulos a ON a.id = vd.articulo_id
+       LEFT JOIN entidades ec ON ec.id = v.entidad_cliente_id
+       LEFT JOIN entidades ev ON ev.id = v.entidad_vendedor_id
+       LEFT JOIN almacenes al ON al.id = 1
        WHERE v.id = $1
-       GROUP BY v.id`,
+       GROUP BY v.id, ec.razon_social, ec.rfc, ev.razon_social, al.nombre`,
       [id]
     );
     return result.rows[0] || null;
