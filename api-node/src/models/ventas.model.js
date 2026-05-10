@@ -98,11 +98,11 @@ const VentasModel = {
           [venta.id, art.articulo_id, art.cantidad, precio, subtotal]
         );
 
-        // Insertar movimiento de inventario (salida) con almacén
+        // Insertar movimiento de inventario (salida) con almacén y referencia a la venta
         await client.query(
-          `INSERT INTO inventario_movimientos (articulo_id, cantidad, tipo_movimiento, almacen_id)
-           VALUES ($1, $2, 'salida', $3)`,
-          [art.articulo_id, art.cantidad, almacenId]
+          `INSERT INTO inventario_movimientos (articulo_id, cantidad, tipo_movimiento, almacen_id, referencia_tipo, referencia_id)
+           VALUES ($1, $2, 'salida', $3, 'venta', $4)`,
+          [art.articulo_id, art.cantidad, almacenId, venta.id]
         );
       }
 
@@ -183,7 +183,7 @@ const VentasModel = {
               ec.razon_social AS cliente_nombre,
               ec.rfc AS cliente_rfc,
               ev.razon_social AS vendedor_nombre,
-              al.nombre AS almacen_nombre,
+              alm.nombre AS almacen_nombre,
               COALESCE(
                 (SELECT json_agg(json_build_object(
                   'id', vd.id,
@@ -202,7 +202,15 @@ const VentasModel = {
        FROM ventas v
        LEFT JOIN entidades ec ON ec.id = v.entidad_cliente_id
        LEFT JOIN entidades ev ON ev.id = v.entidad_vendedor_id
-       LEFT JOIN almacenes al ON al.id = 1
+       LEFT JOIN LATERAL (
+         SELECT al.nombre
+         FROM inventario_movimientos im
+         JOIN almacenes al ON al.id = im.almacen_id
+         WHERE im.referencia_tipo = 'venta'
+           AND im.referencia_id = v.id
+           AND im.tipo_movimiento = 'salida'
+         LIMIT 1
+       ) alm ON true
        ORDER BY v.fecha DESC`
     );
     return result.rows;
@@ -217,7 +225,7 @@ const VentasModel = {
               ec.razon_social AS cliente_nombre,
               ec.rfc AS cliente_rfc,
               ev.razon_social AS vendedor_nombre,
-              al.nombre AS almacen_nombre,
+              alm.nombre AS almacen_nombre,
               json_agg(json_build_object(
                 'id', vd.id,
                 'articulo_id', vd.articulo_id,
@@ -232,9 +240,17 @@ const VentasModel = {
        LEFT JOIN articulos a ON a.id = vd.articulo_id
        LEFT JOIN entidades ec ON ec.id = v.entidad_cliente_id
        LEFT JOIN entidades ev ON ev.id = v.entidad_vendedor_id
-       LEFT JOIN almacenes al ON al.id = 1
+       LEFT JOIN LATERAL (
+         SELECT al.nombre
+         FROM inventario_movimientos im
+         JOIN almacenes al ON al.id = im.almacen_id
+         WHERE im.referencia_tipo = 'venta'
+           AND im.referencia_id = v.id
+           AND im.tipo_movimiento = 'salida'
+         LIMIT 1
+       ) alm ON true
        WHERE v.id = $1
-       GROUP BY v.id, ec.razon_social, ec.rfc, ev.razon_social, al.nombre`,
+       GROUP BY v.id, ec.razon_social, ec.rfc, ev.razon_social, alm.nombre`,
       [id]
     );
     return result.rows[0] || null;

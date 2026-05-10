@@ -348,6 +348,8 @@ CREATE TABLE IF NOT EXISTS inventario_movimientos (
     cantidad        DECIMAL(12,2) NOT NULL,
     tipo_movimiento VARCHAR(20) NOT NULL CHECK (tipo_movimiento IN ('entrada', 'salida', 'ajuste', 'inicial')),
     almacen_id      INTEGER REFERENCES almacenes(id),
+    referencia_tipo VARCHAR(50),
+    referencia_id   INTEGER,
     creado_en       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
