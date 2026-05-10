@@ -51,11 +51,9 @@ const VentasModel = {
         }
       }
 
-      // 4. Generar folio único
+      // 4. Generar folio único con función atómica (bloqueo FOR UPDATE, reinicio diario)
       const folioResult = await client.query(
-        `SELECT 'VTA-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || 
-                LPAD(COALESCE(MAX(id), 0)::TEXT, 4, '0') AS folio
-         FROM ventas`
+        `SELECT obtener_folio_venta() AS folio`
       );
       const folio = folioResult.rows[0].folio;
 

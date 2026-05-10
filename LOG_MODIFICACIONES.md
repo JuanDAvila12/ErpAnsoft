@@ -7,6 +7,7 @@
 | 0003 | 2026-05-09 | Ventas | Mejora | Modelo de ventas migrado a usar entidades (cliente/vendedor) en lugar de IDs directos | Cline | Completado |
 | 0004 | 2026-05-09 | Auditoría | Nuevo | Implementado sistema de log de modificaciones estilo SAP (CDHDR/CDPOS) | Cline | Completado |
 | 0005 | 2026-05-09 | Ventas/BD | Corrección | JOIN de almacén reemplazado por subconsulta LATERAL desde inventario_movimientos; columnas referencia_tipo/referencia_id agregadas | Cline | Completado |
+| 0006 | 2026-05-09 | Ventas | Mejora | Implementado folio atómico con secuencia y bloqueo a nivel de fila | Cline | Completado |
 
 ## Notas de Implementación
 
@@ -53,3 +54,12 @@
 - Se agregaron las columnas `referencia_tipo VARCHAR(50)` y `referencia_id INTEGER` a la tabla `inventario_movimientos` para rastrear el origen del movimiento.
 - Se actualizó el INSERT en `crearVenta()` para incluir `referencia_tipo = 'venta'` y `referencia_id = venta.id` en los movimientos de inventario.
 - En `findAll()` y `findById()`, se reemplazó el `LEFT JOIN almacenes al ON al.id = 1` (que siempre devolvía el almacén ID=1) por una subconsulta `LEFT JOIN LATERAL` que obtiene el almacén real desde `inventario_movimientos` donde `referencia_tipo = 'venta'`, `referencia_id = v.id` y `tipo_movimiento = 'salida'`, limitando a 1 resultado.
+
+### 0006 - Folio Atómico con Secuencia Diaria
+- Se creó la tabla `control_folios` con `tipo_documento VARCHAR(10)` como PK, `fecha_actual DATE`, `ultimo_numero INTEGER`.
+- Se insertó registro inicial para 'VTA' con `ON CONFLICT DO NOTHING`.
+- Se creó la función PL/pgSQL `obtener_folio_venta()` que:
+  - Bloquea la fila con `FOR UPDATE` para evitar duplicados en concurrencia.
+  - Reinicia automáticamente el contador cuando cambia el día.
+  - Genera folio con formato `VTA-YYYYMMDD-NNNN`.
+- En `crearVenta()` se reemplazó la consulta basada en `MAX(id)` por `SELECT obtener_folio_venta()`.

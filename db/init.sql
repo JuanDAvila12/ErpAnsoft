@@ -354,6 +354,59 @@ CREATE TABLE IF NOT EXISTS inventario_movimientos (
 );
 
 -- ============================================================
+-- SECCIÓN 9-B: CONTROL DE FOLIOS (Secuencia atómica con bloqueo a nivel de fila)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS control_folios (
+    tipo_documento  VARCHAR(10) PRIMARY KEY,
+    fecha_actual    DATE DEFAULT CURRENT_DATE,
+    ultimo_numero   INTEGER DEFAULT 0
+);
+
+INSERT INTO control_folios (tipo_documento) VALUES ('VTA')
+ON CONFLICT (tipo_documento) DO NOTHING;
+
+-- Función atómica para obtener folio de venta con bloqueo a nivel de fila
+-- Características:
+--   - Bloqueo FOR UPDATE para evitar duplicados en concurrencia
+--   - Reinicio automático de secuencia cuando cambia la fecha
+--   - Formato: VTA-YYYYMMDD-NNNN
+CREATE OR REPLACE FUNCTION obtener_folio_venta()
+RETURNS VARCHAR(20) AS $$
+DECLARE
+    v_folio     VARCHAR(20);
+    v_hoy       DATE := CURRENT_DATE;
+    v_ultimo    INTEGER;
+BEGIN
+    -- Bloquear la fila de 'VTA' para evitar condiciones de carrera
+    SELECT ultimo_numero, fecha_actual INTO v_ultimo, v_hoy
+    FROM control_folios
+    WHERE tipo_documento = 'VTA'
+    FOR UPDATE;
+
+    -- Si la fecha cambió, reiniciar contador
+    IF v_hoy <> CURRENT_DATE THEN
+        v_ultimo := 0;
+    END IF;
+
+    -- Incrementar contador
+    v_ultimo := v_ultimo + 1;
+
+    -- Actualizar la tabla con el nuevo valor
+    UPDATE control_folios
+    SET ultimo_numero = v_ultimo,
+        fecha_actual  = CURRENT_DATE
+    WHERE tipo_documento = 'VTA';
+
+    -- Generar folio con formato VTA-YYYYMMDD-NNNN
+    v_folio := 'VTA-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD') || '-' ||
+               LPAD(v_ultimo::TEXT, 4, '0');
+
+    RETURN v_folio;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================
 -- 10. TABLAS TRANSACCIONALES (Ventas, Detalle, Contabilidad)
 -- ============================================================
 
