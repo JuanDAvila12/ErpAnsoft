@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { setAuditContext } = require('../utils/auditContext');
 
 /**
  * Modelo genérico para catálogos maestros.
@@ -13,6 +14,7 @@ class CatalogoModel {
     this.idField = config.idField || 'id';
     this.softDelete = config.softDelete !== undefined ? config.softDelete : true;
   }
+
 
   /**
    * Obtiene todos los registros del catálogo.
@@ -44,25 +46,46 @@ class CatalogoModel {
 
   /**
    * Crea un nuevo registro.
+   * @param {Object} data - Datos del registro
+   * @param {Object} [req] - Objeto request de Express (para establecer contexto de auditoría)
    */
-  async create(data) {
+  async create(data, req) {
     const fields = Object.keys(data).filter(f => this.allowedFields.includes('*') || this.allowedFields.includes(f));
     const values = fields.map(f => data[f]);
     const placeholders = fields.map((_, i) => `$${i + 1}`);
 
-    const result = await pool.query(
-      `INSERT INTO ${this.tableName} (${fields.join(', ')})
-       VALUES (${placeholders.join(', ')})
-       RETURNING *`,
-      values
-    );
-    return result.rows[0];
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      if (req) {
+        await setAuditContext(client, req.usuario?.id, req.ip, `Creación en ${this.tableName}`);
+      }
+
+      const result = await client.query(
+        `INSERT INTO ${this.tableName} (${fields.join(', ')})
+         VALUES (${placeholders.join(', ')})
+         RETURNING *`,
+        values
+      );
+
+      await client.query('COMMIT');
+      return result.rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**
    * Actualiza un registro existente.
+   * @param {number|string} id - ID del registro
+   * @param {Object} data - Datos a actualizar
+   * @param {Object} [req] - Objeto request de Express (para establecer contexto de auditoría)
    */
-  async update(id, data) {
+  async update(id, data, req) {
     const fields = Object.keys(data).filter(
       f => (this.allowedFields.includes('*') || this.allowedFields.includes(f)) && f !== this.idField
     );
@@ -73,35 +96,70 @@ class CatalogoModel {
     const values = fields.map(f => data[f]);
     values.push(id);
 
-    const result = await pool.query(
-      `UPDATE ${this.tableName} SET ${setClauses.join(', ')}, updated_at = NOW()
-       WHERE ${this.idField} = $${fields.length + 1}
-       RETURNING *`,
-      values
-    );
-    return result.rows[0] || null;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      if (req) {
+        await setAuditContext(client, req.usuario?.id, req.ip, `Actualización en ${this.tableName}`);
+      }
+
+      const result = await client.query(
+        `UPDATE ${this.tableName} SET ${setClauses.join(', ')}, updated_at = NOW()
+         WHERE ${this.idField} = $${fields.length + 1}
+         RETURNING *`,
+        values
+      );
+
+      await client.query('COMMIT');
+      return result.rows[0] || null;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   /**
    * Elimina (o desactiva) un registro.
+   * @param {number|string} id - ID del registro
+   * @param {Object} [req] - Objeto request de Express (para establecer contexto de auditoría)
    */
-  async delete(id) {
-    if (this.softDelete) {
-      const result = await pool.query(
-        `UPDATE ${this.tableName} SET activo = FALSE, updated_at = NOW()
-         WHERE ${this.idField} = $1
-         RETURNING *`,
-        [id]
-      );
+  async delete(id, req) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      if (req) {
+        await setAuditContext(client, req.usuario?.id, req.ip, `Eliminación en ${this.tableName}`);
+      }
+
+      let result;
+      if (this.softDelete) {
+        result = await client.query(
+          `UPDATE ${this.tableName} SET activo = FALSE, updated_at = NOW()
+           WHERE ${this.idField} = $1
+           RETURNING *`,
+          [id]
+        );
+      } else {
+        result = await client.query(
+          `DELETE FROM ${this.tableName} WHERE ${this.idField} = $1 RETURNING *`,
+          [id]
+        );
+      }
+
+      await client.query('COMMIT');
       return result.rows[0] || null;
-    } else {
-      const result = await pool.query(
-        `DELETE FROM ${this.tableName} WHERE ${this.idField} = $1 RETURNING *`,
-        [id]
-      );
-      return result.rows[0] || null;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
   }
+
 
   /**
    * Busca registros por término de búsqueda.

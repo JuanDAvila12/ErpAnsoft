@@ -51,7 +51,7 @@ router.post('/', authMiddleware, async (req, res) => {
       almacen_id,
       metodo_pago,
       articulos,
-    });
+    }, req);
 
     res.status(201).json({
       mensaje: 'Venta registrada exitosamente',

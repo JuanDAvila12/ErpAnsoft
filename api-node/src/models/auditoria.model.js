@@ -4,23 +4,40 @@ const AuditoriaModel = {
   /**
    * Obtiene el historial completo de cambios de un registro específico.
    * Estilo SAP CDHDR + CDPOS.
+   * @param {string} tabla - Nombre de la tabla afectada
+   * @param {number} registroId - ID del registro
+   * @param {Object} opciones - Opciones de filtro { desde, hasta, limite }
    */
-  async getHistorialPorRegistro(tabla, registroId) {
+  async getHistorialPorRegistro(tabla, registroId, opciones = {}) {
+    const { desde, hasta, limite = 50 } = opciones;
+    const condiciones = ['lc.tabla_afectada = $1', 'lc.registro_id = $2'];
+    const params = [tabla, registroId];
+    let idx = 3;
+
+    if (desde) {
+      condiciones.push(`lc.fecha >= $${idx}`);
+      params.push(desde);
+      idx++;
+    }
+
+    if (hasta) {
+      condiciones.push(`lc.fecha <= $${idx}`);
+      params.push(hasta);
+      idx++;
+    }
+
+    params.push(limite);
+
     const result = await pool.query(
-      `SELECT lc.id AS cabecera_id,
-              lc.tabla_afectada,
-              lc.registro_id,
+      `SELECT lc.id AS id_cabecera,
               lc.tipo_operacion,
-              lc.usuario_id,
               u.nombre AS usuario_nombre,
-              u.email AS usuario_email,
               lc.fecha,
               lc.ip_origen,
               lc.comentario,
               COALESCE(
                 json_agg(
                   json_build_object(
-                    'id', ld.id,
                     'campo_afectado', ld.campo_afectado,
                     'valor_anterior', ld.valor_anterior,
                     'valor_nuevo', ld.valor_nuevo
@@ -32,14 +49,16 @@ const AuditoriaModel = {
        FROM log_modificaciones_cabecera lc
        LEFT JOIN log_modificaciones_detalle ld ON ld.cabecera_id = lc.id
        LEFT JOIN usuarios u ON u.id = lc.usuario_id
-       WHERE lc.tabla_afectada = $1 AND lc.registro_id = $2
-       GROUP BY lc.id, u.nombre, u.email
-       ORDER BY lc.fecha DESC`,
-      [tabla, registroId]
+       WHERE ${condiciones.join(' AND ')}
+       GROUP BY lc.id, u.nombre
+       ORDER BY lc.fecha DESC
+       LIMIT $${idx}`,
+      params
     );
 
     return result.rows;
   },
+
 
   /**
    * Obtiene todos los registros de auditoría con paginación.

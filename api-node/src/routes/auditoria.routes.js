@@ -29,6 +29,9 @@ router.get('/:tabla/:registro_id', authMiddleware, async (req, res) => {
       });
     }
 
+    // Parámetros de filtro opcionales
+    const { desde, hasta, limite = 50 } = req.query;
+
     // Tablas permitidas (whitelist para seguridad)
     const tablasPermitidas = [
       'ventas', 'ventas_detalle', 'inventario_movimientos',
@@ -42,7 +45,11 @@ router.get('/:tabla/:registro_id', authMiddleware, async (req, res) => {
       });
     }
 
-    const historial = await AuditoriaModel.getHistorialPorRegistro(tabla, id);
+    const historial = await AuditoriaModel.getHistorialPorRegistro(tabla, id, {
+      desde: desde || undefined,
+      hasta: hasta || undefined,
+      limite: parseInt(limite) || 50,
+    });
 
     res.json({
       datos: historial,

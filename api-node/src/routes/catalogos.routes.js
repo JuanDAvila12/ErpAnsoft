@@ -66,7 +66,7 @@ function crearRutasCatalogo(nombre, catalogo) {
   // POST /api/v1/catalogos/:nombre - Crear
   ruta.post('/', authMiddleware, async (req, res) => {
     try {
-      const dato = await catalogo.create(req.body);
+      const dato = await catalogo.create(req.body, req);
 
       res.status(201).json({
         mensaje: `${nombre} creado exitosamente`,
@@ -85,7 +85,7 @@ function crearRutasCatalogo(nombre, catalogo) {
   // PUT /api/v1/catalogos/:nombre/:id - Actualizar
   ruta.put('/:id', authMiddleware, async (req, res) => {
     try {
-      const dato = await catalogo.update(req.params.id, req.body);
+      const dato = await catalogo.update(req.params.id, req.body, req);
 
       if (!dato) {
         return res.status(404).json({
@@ -111,7 +111,7 @@ function crearRutasCatalogo(nombre, catalogo) {
   // DELETE /api/v1/catalogos/:nombre/:id - Eliminar (soft delete)
   ruta.delete('/:id', authMiddleware, async (req, res) => {
     try {
-      const dato = await catalogo.delete(req.params.id);
+      const dato = await catalogo.delete(req.params.id, req);
 
       if (!dato) {
         return res.status(404).json({
@@ -133,6 +133,7 @@ function crearRutasCatalogo(nombre, catalogo) {
       });
     }
   });
+
 
   return ruta;
 }

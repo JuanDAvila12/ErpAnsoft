@@ -8,8 +8,10 @@
 | 0004 | 2026-05-09 | Auditoría | Nuevo | Implementado sistema de log de modificaciones estilo SAP (CDHDR/CDPOS) | Cline | Completado |
 | 0005 | 2026-05-09 | Ventas/BD | Corrección | JOIN de almacén reemplazado por subconsulta LATERAL desde inventario_movimientos; columnas referencia_tipo/referencia_id agregadas | Cline | Completado |
 | 0006 | 2026-05-09 | Ventas | Mejora | Implementado folio atómico con secuencia y bloqueo a nivel de fila | Cline | Completado |
+| 0007 | 2026-05-09 | Auditoría | Nuevo | Implementado endpoint de consulta de auditoría y configuración automática de variables de sesión para triggers | Cline | Completado |
 
 ## Notas de Implementación
+
 
 ### 0001 - Seguridad JWT
 - Se agregó validación crítica al inicio: si `NODE_ENV=production` y no hay `JWT_SECRET`, el servidor lanza error fatal y termina.
@@ -63,3 +65,21 @@
   - Reinicia automáticamente el contador cuando cambia el día.
   - Genera folio con formato `VTA-YYYYMMDD-NNNN`.
 - En `crearVenta()` se reemplazó la consulta basada en `MAX(id)` por `SELECT obtener_folio_venta()`.
+
+### 0007 - Configuración Automática de Variables de Sesión y Endpoint de Auditoría
+- Se creó el helper `api-node/src/utils/auditContext.js` con la función `setAuditContext(client, usuarioId, ip, comentario)` que establece las variables de sesión `app.usuario_id`, `app.ip_origen` y `app.comentario` mediante `SELECT set_config(...)`.
+- Se integró `setAuditContext` en `ventas.model.js`:
+  - La firma de `crearVenta()` ahora acepta un segundo parámetro `req` para obtener el usuario e IP.
+  - Se llama a `setAuditContext` justo después de `BEGIN` y antes de cualquier operación de escritura.
+- Se integró `setAuditContext` en el modelo genérico de catálogos (`catalogos.model.js`):
+  - Los métodos `create()`, `update()` y `delete()` ahora aceptan un tercer parámetro opcional `req`.
+  - Se envuelven las operaciones en transacciones (`BEGIN/COMMIT/ROLLBACK`) con una conexión `client`.
+  - Se llama a `setAuditContext` cuando se proporciona `req`.
+- Se actualizó `ventas.routes.js`: se pasa `req` como segundo argumento a `crearVenta()`.
+- Se actualizaron las rutas de catálogos (`catalogos.routes.js`): se pasa `req` a `create()`, `update()` y `delete()`.
+- Se mejoró el endpoint `GET /api/v1/auditoria/:tabla/:registro_id`:
+  - Ahora acepta parámetros de query opcionales: `desde` (fecha inicio), `hasta` (fecha fin), `limite` (default 50).
+  - Se agregaron filtros dinámicos en `auditoria.model.js` para soportar estos parámetros.
+  - La respuesta incluye `id_cabecera`, `tipo_operacion`, `usuario_nombre`, `fecha`, `ip_origen`, `comentario` y `detalles`.
+
+

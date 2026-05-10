@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { setAuditContext } = require('../utils/auditContext');
 
 const VentasModel = {
   /**
@@ -18,12 +19,18 @@ const VentasModel = {
   /**
    * Crea una venta completa usando una transacción SQL.
    * Inserta en ventas, ventas_detalle, inventario_movimientos y asientos_contables.
+   * @param {Object} datosVenta - Datos de la venta
+   * @param {Object} req - Objeto request de Express (para obtener usuario e IP para auditoría)
    */
-  async crearVenta({ entidad_cliente_id, entidad_vendedor_id, almacen_id, metodo_pago, articulos }) {
+  async crearVenta(datosVenta, req) {
+    const { entidad_cliente_id, entidad_vendedor_id, almacen_id, metodo_pago, articulos } = datosVenta;
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
+
+      // Establecer contexto de auditoría para los triggers
+      await setAuditContext(client, req?.usuario?.id, req?.ip, 'Venta registrada desde módulo POS');
 
       // 1. Validar que entidad_cliente_id exista y tenga rol 'cliente'
       const cliente = await this._validarEntidadConRol(entidad_cliente_id, 'cliente');
