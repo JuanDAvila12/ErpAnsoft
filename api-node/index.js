@@ -24,12 +24,23 @@ const inventarioRoutes = require('./src/routes/inventario.routes');
 const ventasRoutes = require('./src/routes/ventas.routes');
 const catalogosRoutes = require('./src/routes/catalogos.routes');
 const auditoriaRoutes = require('./src/routes/auditoria.routes');
+const documentosVentaRoutes = require('./src/routes/documentosVenta.routes');
+const documentosCompraRoutes = require('./src/routes/documentosCompra.routes');
+const articulosSeriesRoutes = require('./src/routes/articulosSeries.routes');
+const comprobantesFiscalesRoutes = require('./src/routes/comprobantesFiscales.routes');
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/inventario', inventarioRoutes);
+
+// Compatibilidad hacia atrás: /api/v1/ventas mantiene ruta anterior
 app.use('/api/v1/ventas', ventasRoutes);
+
 app.use('/api/v1/catalogos', catalogosRoutes);
 app.use('/api/v1/auditoria', auditoriaRoutes);
+app.use('/api/v1/documentos-venta', documentosVentaRoutes);
+app.use('/api/v1/documentos-compra', documentosCompraRoutes);
+app.use('/api/v1/articulos-series', articulosSeriesRoutes);
+app.use('/api/v1/comprobantes-fiscales', comprobantesFiscalesRoutes);
 
 // Ruta de salud / health check
 app.get('/api/v1/health', (req, res) => {

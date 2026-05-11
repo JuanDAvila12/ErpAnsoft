@@ -6,7 +6,7 @@ from typing import Optional
 import asyncpg
 import os
 
-from fiscal_service import generar_pre_xml
+from fiscal_service import generar_pre_xml, generar_xml_cfdi, obtener_comprobante
 
 app = FastAPI(
     title="SPI ERP - API Python",
@@ -83,6 +83,52 @@ async def generar_pre_xml_endpoint(venta_id: int):
         raise HTTPException(
             status_code=500,
             detail=f"Error al generar pre-XML CFDI: {str(e)}",
+        )
+
+
+# ============================================================
+# Endpoint: Timbrar CFDI 4.0 (POST)
+# ============================================================
+
+
+@app.post("/api/v1/fiscal/timbrar/{documento_venta_id}")
+async def timbrar_cfdi(documento_venta_id: int):
+    """
+    Genera XML CFDI 4.0 completo, timbra (simulado) y retorna UUID.
+    Construye todos los nodos del SAT: Comprobante, Emisor, Receptor,
+    Conceptos, Impuestos usando los catálogos SAT.
+    """
+    try:
+        resultado = await generar_xml_cfdi(documento_venta_id)
+        return resultado
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al timbrar CFDI: {str(e)}",
+        )
+
+
+# ============================================================
+# Endpoint: Consultar comprobante fiscal por ID (GET)
+# ============================================================
+
+
+@app.get("/api/v1/comprobantes/{comprobante_id}")
+async def consultar_comprobante(comprobante_id: int):
+    """
+    Obtiene un comprobante fiscal por ID, incluyendo UUID, XML y datos del cliente.
+    """
+    try:
+        resultado = await obtener_comprobante(comprobante_id)
+        return resultado
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al consultar comprobante: {str(e)}",
         )
 
 

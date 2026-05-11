@@ -1,85 +1,72 @@
-# Log de Modificaciones - ERP Ansoft
+# Registro de Modificaciones - SPI ERP
 
-| Número | Fecha | Módulo | Tipo | Descripción | Autor | Estado |
-|--------|-------|--------|------|-------------|-------|--------|
-| 0001 | 2026-05-09 | Seguridad | Corrección | JWT ahora solo almacena user ID, secret obligatoria por variable de entorno | Cline | Completado |
-| 0002 | 2026-05-09 | Base de Datos | Corrección | Cambiado ON DELETE CASCADE a RESTRICT en ventas_detalle | Cline | Completado |
-| 0003 | 2026-05-09 | Ventas | Mejora | Modelo de ventas migrado a usar entidades (cliente/vendedor) en lugar de IDs directos | Cline | Completado |
-| 0004 | 2026-05-09 | Auditoría | Nuevo | Implementado sistema de log de modificaciones estilo SAP (CDHDR/CDPOS) | Cline | Completado |
-| 0005 | 2026-05-09 | Ventas/BD | Corrección | JOIN de almacén reemplazado por subconsulta LATERAL desde inventario_movimientos; columnas referencia_tipo/referencia_id agregadas | Cline | Completado |
-| 0006 | 2026-05-09 | Ventas | Mejora | Implementado folio atómico con secuencia y bloqueo a nivel de fila | Cline | Completado |
-| 0007 | 2026-05-09 | Auditoría | Nuevo | Implementado endpoint de consulta de auditoría y configuración automática de variables de sesión para triggers | Cline | Completado |
+## 0001 - Configuración inicial del proyecto
+- Creación de estructura base del proyecto con Node.js, Python y PostgreSQL.
+- Configuración de Docker Compose, Dockerfiles y dependencias.
+- Creación de base de datos inicial con tablas de usuarios, roles y sesiones.
 
-## Notas de Implementación
+## 0002 - Catálogos maestros y módulo de inventarios
+- Implementación de catálogos maestros (entidades, almacenes, marcas, formas_pago, etc.).
+- Creación del módulo de inventarios con movimientos (entradas, salidas, ajustes).
+- API REST para gestión de inventarios y artículos.
+- Vistas frontend: Configuración Maestra.
 
+## 0003 - Módulo de ventas y procesos de negocio
+- Implementación del módulo de ventas con transacciones completas.
+- Vistas de Nueva Venta, Dashboard de Ventas, etc.
+- Backend para registro de ventas con detalles y actualización de inventario.
 
-### 0001 - Seguridad JWT
-- Se agregó validación crítica al inicio: si `NODE_ENV=production` y no hay `JWT_SECRET`, el servidor lanza error fatal y termina.
-- `generarToken(usuario)` ahora solo guarda `{ id: usuario.id }` en el payload. Se eliminó email y rol_id.
-- Nueva función `obtenerUsuarioDesdeToken(token)` que decodifica el token, consulta la BD con JOIN a usuarios, roles, entidades y entidad_roles, y devuelve el objeto completo.
-- `authMiddleware` ahora usa `obtenerUsuarioDesdeToken` internamente.
-- El endpoint `/api/v1/auth/login` ya no devuelve datos del usuario en el body; solo retorna el token.
-- El endpoint `/api/v1/auth/perfil` permite al frontend obtener los datos completos del usuario después del login.
+## 0004 - Sistema de roles, permisos y seguridad
+- Implementación de roles y permisos a nivel de base de datos y aplicación.
+- Middleware de autenticación JWT.
+- Control de acceso basado en roles en rutas y vistas.
 
-### 0002 - ON DELETE CASCADE a RESTRICT
-- Se modificó la definición de `ventas_detalle.venta_id` para usar `ON DELETE RESTRICT`.
-- Se agregó bloque `DO $$ ... END $$` para migrar automáticamente BD existentes que ya tengan la constraint con CASCADE.
-- Se agregó comentario documentando la política: "En ERP financiero nunca se borran transacciones, se cancelan cambiando estatus."
+## 0005 - Sistema de auditoría completo
+- Implementación de auditoría con triggers en base de datos.
+- Modelo y ruta para consultar cambios.
+- Integración de setAuditContext en transacciones existentes.
 
-### 0003 - Migración a Entidades en Ventas
-- `crearVenta()` ahora acepta `entidad_cliente_id` (obligatorio), `entidad_vendedor_id` (opcional) y `almacen_id` (opcional, default 1).
-- Validaciones: se verifica que `entidad_cliente_id` exista en entidades con rol 'cliente', y que `entidad_vendedor_id` tenga rol 'vendedor'.
-- Se agregó columna `entidad_vendedor_id` a la tabla `ventas`.
-- Los INSERT en ventas ahora usan `entidad_cliente_id` y `entidad_vendedor_id`.
-- Los INSERT en inventario_movimientos ahora incluyen `almacen_id`.
-- `findAll()` y `findById()` hacen JOIN con entidades para devolver `cliente_nombre`, `cliente_rfc`, `vendedor_nombre` y `almacen_nombre`.
-- Se mantuvo intacta la lógica de transacción (BEGIN/COMMIT/ROLLBACK).
-- Se actualizó la ruta POST `/api/v1/ventas` con las nuevas validaciones de entrada.
+## 0006 - Sistema de configuración y ajustes
+- Tabla de configuración del sistema.
+- API para gestionar parámetros configurables.
+- Integración con módulos existentes.
 
-### 0004 - Sistema de Auditoría Estilo SAP
-- Se crearon dos tablas de auditoría:
-  - `log_modificaciones_cabecera` (equivalente a CDHDR de SAP): almacena cabecera de cada cambio con tabla, registro, tipo operación (I/U/D), usuario, fecha, IP.
-  - `log_modificaciones_detalle` (equivalente a CDPOS de SAP): almacena campo por campo los valores anteriores y nuevos.
-- Se creó la función PL/pgSQL `fn_auditar_cambios()` ejecutada por triggers AFTER INSERT/UPDATE/DELETE.
-  - Para INSERT: registra tipo 'I' con valores iniciales.
-  - Para UPDATE: compara OLD vs NEW campo por campo y registra diferencias.
-  - Para DELETE: registra tipo 'D' con valores eliminados.
-  - Usa variables de sesión (`app.usuario_id`, `app.ip_origen`, `app.comentario`) para obtener contexto de la aplicación.
-  - Excluye campos temporales automáticos (`created_at`, `updated_at`, `creado_en`).
-- Se agregaron triggers para las tablas: ventas, ventas_detalle, inventario_movimientos, articulos, entidades.
-- Se creó modelo `auditoria.model.js` con funciones `getHistorialPorRegistro()` y `getAll()`.
-- Se creó ruta `auditoria.routes.js` con endpoints protegidos (solo admin):
-  - `GET /api/v1/auditoria/:tabla/:registro_id` - historial completo de un registro
-  - `GET /api/v1/auditoria` - listado paginado con filtros.
+## 0007 - Catálogos SAT y expansión de entidades
+- Agregados catálogos SAT iniciales a la base de datos.
+- Expansión de tabla entidades con campos fiscales.
+- Mejoras en la estructura de datos maestros.
 
-### 0005 - Corrección JOIN de Almacén con Subconsulta LATERAL
-- Se agregaron las columnas `referencia_tipo VARCHAR(50)` y `referencia_id INTEGER` a la tabla `inventario_movimientos` para rastrear el origen del movimiento.
-- Se actualizó el INSERT en `crearVenta()` para incluir `referencia_tipo = 'venta'` y `referencia_id = venta.id` en los movimientos de inventario.
-- En `findAll()` y `findById()`, se reemplazó el `LEFT JOIN almacenes al ON al.id = 1` (que siempre devolvía el almacén ID=1) por una subconsulta `LEFT JOIN LATERAL` que obtiene el almacén real desde `inventario_movimientos` donde `referencia_tipo = 'venta'`, `referencia_id = v.id` y `tipo_movimiento = 'salida'`, limitando a 1 resultado.
+## 0008 - Transacciones por capas (cabecera/líneas/inventario/series/fiscal), catálogos SAT completos y facturación CFDI 4.0
+### SQL (db/migration_v3.sql):
+- **Nuevos catálogos maestros:** unidades_medida (13 registros SAT), categorias_producto (jerárquica), marcas, terminos_pago (Contado/Neto15/30/60), regimenes_fiscales (13 claves SAT 601-626), usos_cfdi (17 claves G01-D10), metodos_pago_sat (PUE/PPD), objetos_impuesto (01/02/03), series_documentos (COT/OV/F/OC/COM).
+- **Ampliación de articulos:** unidad_medida_id, categoria_id, marca_id, codigo_barras, usa_serie.
+- **Ampliación de entidades:** telefono, email, regimen_fiscal_id, uso_cfdi_default_id.
+- **Renombrado:** ventas → documentos_venta, ventas_detalle → documentos_venta_detalle.
+- **Nuevos campos en documentos_venta:** tipo (cotizacion/orden_venta/venta), estado (borrador/pendiente/confirmado/facturado/cancelado), documento_origen_id, terminos_pago_id, fecha_vencimiento, serie_id.
+- **Función obtener_folio(tipo):** bloqueo FOR UPDATE atómico, formato SERIE-YYYYMMDD-NNNN, reinicio por fecha.
+- **Nuevos tipos en control_folios:** COT, OV, FAC, OC, COM.
+- **inventario_movimientos:** documento_detalle_tipo, documento_detalle_id.
+- **Tablas nuevas:** documentos_compra, documentos_compra_detalle, articulos_series, comprobantes_fiscales.
+- **Índices:** ~40 nuevos índices para todas las tablas y columnas FK.
+- **Triggers de auditoría:** para todas las nuevas tablas y renombradas.
 
-### 0006 - Folio Atómico con Secuencia Diaria
-- Se creó la tabla `control_folios` con `tipo_documento VARCHAR(10)` como PK, `fecha_actual DATE`, `ultimo_numero INTEGER`.
-- Se insertó registro inicial para 'VTA' con `ON CONFLICT DO NOTHING`.
-- Se creó la función PL/pgSQL `obtener_folio_venta()` que:
-  - Bloquea la fila con `FOR UPDATE` para evitar duplicados en concurrencia.
-  - Reinicia automáticamente el contador cuando cambia el día.
-  - Genera folio con formato `VTA-YYYYMMDD-NNNN`.
-- En `crearVenta()` se reemplazó la consulta basada en `MAX(id)` por `SELECT obtener_folio_venta()`.
+### Python (api-python/):
+- **fiscal_service.py:** Función generar_pre_xml() con consulta completa a catálogos SAT (regimenes_fiscales, usos_cfdi, metodos_pago_sat, unidades_medida). Función generar_xml_cfdi() que construye XML real CFDI 4.0, inserta en comprobantes_fiscales, actualiza estado a facturado. Función obtener_comprobante() con JOIN a documentos_venta y entidades.
+- **main.py:** Endpoint POST /api/v1/fiscal/timbrar/{documento_venta_id} (timbra y retorna UUID simulado). Endpoint GET /api/v1/comprobantes/{id} (consulta con XML y UUID).
 
-### 0007 - Configuración Automática de Variables de Sesión y Endpoint de Auditoría
-- Se creó el helper `api-node/src/utils/auditContext.js` con la función `setAuditContext(client, usuarioId, ip, comentario)` que establece las variables de sesión `app.usuario_id`, `app.ip_origen` y `app.comentario` mediante `SELECT set_config(...)`.
-- Se integró `setAuditContext` en `ventas.model.js`:
-  - La firma de `crearVenta()` ahora acepta un segundo parámetro `req` para obtener el usuario e IP.
-  - Se llama a `setAuditContext` justo después de `BEGIN` y antes de cualquier operación de escritura.
-- Se integró `setAuditContext` en el modelo genérico de catálogos (`catalogos.model.js`):
-  - Los métodos `create()`, `update()` y `delete()` ahora aceptan un tercer parámetro opcional `req`.
-  - Se envuelven las operaciones en transacciones (`BEGIN/COMMIT/ROLLBACK`) con una conexión `client`.
-  - Se llama a `setAuditContext` cuando se proporciona `req`.
-- Se actualizó `ventas.routes.js`: se pasa `req` como segundo argumento a `crearVenta()`.
-- Se actualizaron las rutas de catálogos (`catalogos.routes.js`): se pasa `req` a `create()`, `update()` y `delete()`.
-- Se mejoró el endpoint `GET /api/v1/auditoria/:tabla/:registro_id`:
-  - Ahora acepta parámetros de query opcionales: `desde` (fecha inicio), `hasta` (fecha fin), `limite` (default 50).
-  - Se agregaron filtros dinámicos en `auditoria.model.js` para soportar estos parámetros.
-  - La respuesta incluye `id_cabecera`, `tipo_operacion`, `usuario_nombre`, `fecha`, `ip_origen`, `comentario` y `detalles`.
+### Node.js (api-node/):
+- **Modelos nuevos:**
+  - documentosVenta.model.js: crearDocumento(tipo, datos, req) con transacción ACID, folio atómico vía obtener_folio(), validación de roles cliente/vendedor, inventario para ventas, series automáticas. convertirDocumento(origenId, nuevoTipo, req) con pipeline cotizacion→orden_venta→venta. cancelar(id, req) con reversión de inventario y series.
+  - documentosCompra.model.js: crearDocumento, cancelar con reversión de inventario.
+  - inventario.model.js: insertarMovimiento con vínculo a línea de documento (documento_detalle_tipo, documento_detalle_id), getMovimientosPorDocumentoDetalle.
+  - articulosSeries.model.js: CRUD completo, marcarVendido, findDisponibles, validación de estado (disponible/vendido/reservado/baja).
+  - comprobantesFiscales.model.js: consultas findAll/findById/findByUUID/findByDocumentoVentaId.
+- **Rutas nuevas (protegidas con authMiddleware):**
+  - /api/v1/documentos-venta (GET/POST, GET /:id, POST /convertir/:origenId, POST /:id/cancelar)
+  - /api/v1/documentos-compra (GET/POST, GET /:id, POST /:id/cancelar)
+  - /api/v1/articulos-series (GET /articulo/:id, GET /disponibles/:id, POST, GET /:id, PUT /:id/estado, GET /buscar/:serie)
+  - /api/v1/comprobantes-fiscales (GET, GET /:id, GET /documento/:id, GET /uuid/:uuid)
+- **index.js:** Registro de todas las nuevas rutas, compatibilidad hacia atrás en /api/v1/ventas.
 
-
+### Configuración:
+- Se generó commit: "feat: transacciones por capas (cabecera/líneas/inventario/series/fiscal), catálogos SAT completos y facturación CFDI 4.0"
