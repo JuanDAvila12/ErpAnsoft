@@ -70,3 +70,61 @@
 
 ### Configuración:
 - Se generó commit: "feat: transacciones por capas (cabecera/líneas/inventario/series/fiscal), catálogos SAT completos y facturación CFDI 4.0"
+
+## 0009 - Sistema de permisos RBAC y endpoints de entidades/artículos
+### SQL (db/migration_v4.sql):
+- Creación de tabla `permisos` (id, codigo UNICO, descripcion, modulo)
+- Creación de tabla `rol_permisos` (rol_id, permiso_id, PRIMARY KEY compuesta)
+- Precarga de permisos: ventas.crear, ventas.cancelar, ventas.ver, compras.ver, inventario.ver, contabilidad.ver, contabilidad.exportar, fiscal.ver, crm.ver, pos.usar, admin.configurar
+- Asignación de todos los permisos al rol `admin`
+
+### Node.js (api-node/):
+- `src/middleware/permissions.js`: Middleware `checkPermission(permisoRequerido)` que consulta rol_permisos y retorna 403 si no tiene permiso
+- `src/routes/auth.routes.js`: 
+  - Nuevo endpoint POST `/login-cliente` para autenticación de portal clientes (con claim `portal: true`)
+  - Nuevo endpoint GET `/perfil` para obtener información del usuario logueado
+  - Nuevo endpoint GET `/mis-permisos` que devuelve los códigos de permisos del usuario
+  - Actualización de `/login` para incluir `rol_nombre` y `entidad_razon_social` en respuesta
+- `src/routes/permisos.routes.js`: CRUD completo de permisos por rol
+- `api-node/index.js`: 
+  - Nuevos endpoints `/api/v1/articulos?search=` para búsqueda de productos (usado por POS)
+  - Nuevo endpoint `/api/v1/entidades?search=&rol=` para búsqueda de entidades (clientes, proveedores)
+  - Registro de rutas de permisos
+
+### Frontend - Landing Page y Login:
+- `src/layouts/PublicLayout.vue`: Layout público con AppBar, footer, y botón "Acceso" que abre modal
+- `src/views/landing/HomeView.vue`: Hero section, módulos cards, servicios, formulario de contacto
+- `src/components/LoginModal.vue`: Modal con tabs ERP y Portal de Clientes, login JWT, redirección a dashboard/portal
+
+### Frontend - Dashboard Modular:
+- `src/layouts/DashboardLayout.vue`: Barra superior con usuario y logout, Navigation Drawer con menú agrupado por módulos y permisos, router-view para contenido
+- `src/views/DashboardHome.vue`: Cards de acceso rápido, información del usuario, estado del sistema
+- Módulo Ventas: CotizacionesView, OrdenesView, FacturasView, ClientesView
+- Módulo Compras: OrdenesCompraView, RecepcionesView, ProveedoresView
+- Módulo Inventario: ArticulosView, AlmacenesView, MovimientosView, SeriesView
+- Módulo Contabilidad: CuentasView, AsientosView, BalanzaView
+- Módulo Fiscal: CFDIView, TimbradoView, CancelacionesView
+- Módulo CRM: OportunidadesView, ActividadesView
+- Módulo Configuración: UsuariosView, CatalogosView (SAT), AuditoriaView
+- `src/components/ModuloPlaceholder.vue`: Componente reutilizable para vistas placeholder con tabla vacía
+
+### Frontend - Portal de Clientes:
+- `src/layouts/PortalLayout.vue`: Layout simplificado para portal con navegación a facturas y estado de cuenta
+- `src/views/portal/FacturasView.vue`: Consulta de facturas del cliente autenticado
+- `src/views/portal/EstadoCuentaView.vue`: Resumen de saldos pendientes con cards informativos
+
+### Frontend - Sistema de Permisos (RBAC):
+- `src/views/configuracion/PermisosView.vue`: Interfaz para asignar/desasignar permisos por rol mediante checkboxes agrupados por módulo
+
+### Frontend - Punto de Venta (POS):
+- `src/views/pos/POSView.vue`: POS completo con buscador de productos, carrito, selector de cliente, método de pago y botón Cobrar que POST a documentos-venta
+
+### Vue Router (`src/router/index.js`):
+- Ruta `/` usa PublicLayout y renderiza HomeView (landing page)
+- Ruta `/login` redirige a `/`
+- Ruta `/dashboard` usa DashboardLayout con ~20 rutas hijas protegidas (requiresAuth)
+- Ruta `/portal` usa PortalLayout con rutas hijas para facturas y estado de cuenta
+- Navigation guard protege rutas requiresAuth redirigiendo a `/`
+
+### Configuración:
+- Se generó commit: "feat: landing page Odoo-like, portal clientes, RBAC y POS"

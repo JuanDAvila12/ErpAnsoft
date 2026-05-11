@@ -1,10 +1,6 @@
 -- ============================================================
--- Script de inicialización de base de datos - SPI ERP
--- Versión 2.0 - Rediseño completo con entidades y catálogos
--- ============================================================
-
--- ============================================================
--- 1. CATÁLOGOS MAESTROS
+-- Script de inicialización base - SPI ERP
+-- Solo definiciones de tablas y catálogos maestros
 -- ============================================================
 
 -- Catálogo de monedas
@@ -107,10 +103,7 @@ INSERT INTO listas_precios (nombre, factor_descuento) VALUES
     ('Precio Especial', 35.00)
 ON CONFLICT DO NOTHING;
 
--- ============================================================
--- 2. TABLA DE ENTIDADES (Personas físicas/morales)
--- ============================================================
-
+-- Tabla de entidades
 CREATE TABLE IF NOT EXISTS entidades (
     id              SERIAL PRIMARY KEY,
     razon_social    VARCHAR(255) NOT NULL,
@@ -140,184 +133,22 @@ CREATE TABLE IF NOT EXISTS entidad_roles (
     UNIQUE(entidad_id, rol)
 );
 
--- ============================================================
--- 3. MODIFICACIÓN DE USUARIOS (agregar entidad_id)
--- ============================================================
 
--- Agregar columna entidad_id a usuarios si no existe
-DO $$ BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'usuarios' AND column_name = 'entidad_id'
-    ) THEN
-        ALTER TABLE usuarios ADD COLUMN entidad_id INTEGER REFERENCES entidades(id);
-    END IF;
-END $$;
-
--- ============================================================
--- 4. ALMACENES
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS almacenes (
-    id              SERIAL PRIMARY KEY,
-    nombre          VARCHAR(100) NOT NULL,
-    ubicacion       VARCHAR(255),
-    activo          BOOLEAN DEFAULT TRUE,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-INSERT INTO almacenes (nombre, ubicacion) VALUES
-    ('Almacén Central', 'Av. Principal #123, Col. Centro'),
-    ('Almacén Sucursal Norte', 'Blvd. Norte #456, Col. Industrial'),
-    ('Almacén Sucursal Sur', 'Calle Sur #789, Col. Comercial')
-ON CONFLICT DO NOTHING;
-
--- ============================================================
--- 5. BANCOS Y CUENTAS BANCARIAS
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS bancos (
-    id              SERIAL PRIMARY KEY,
-    nombre_corto    VARCHAR(50) NOT NULL,
-    razon_social    VARCHAR(255) NOT NULL,
-    clave_institucion VARCHAR(10) NOT NULL UNIQUE,
-    activo          BOOLEAN DEFAULT TRUE,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-INSERT INTO bancos (nombre_corto, razon_social, clave_institucion) VALUES
-    ('BBVA', 'BBVA México, S.A., Institución de Banca Múltiple, Grupo Financiero BBVA México', '012'),
-    ('Santander', 'Banco Santander México, S.A., Institución de Banca Múltiple, Grupo Financiero Santander México', '014'),
-    ('Banamex', 'Citibanamex, S.A., Institución de Banca Múltiple', '002'),
-    ('Banorte', 'Banco Mercantil del Norte, S.A., Institución de Banca Múltiple, Grupo Financiero Banorte', '072'),
-    ('HSBC', 'HSBC México, S.A., Institución de Banca Múltiple, Grupo Financiero HSBC', '021')
-ON CONFLICT (clave_institucion) DO NOTHING;
-
-CREATE TABLE IF NOT EXISTS cuentas_bancarias (
-    id              SERIAL PRIMARY KEY,
-    entidad_id      INTEGER NOT NULL REFERENCES entidades(id),
-    banco_id        INTEGER NOT NULL REFERENCES bancos(id),
-    clabe           VARCHAR(18) NOT NULL UNIQUE,
-    numero_cuenta   VARCHAR(20) NOT NULL,
-    moneda_id       INTEGER NOT NULL REFERENCES monedas(id),
-    activo          BOOLEAN DEFAULT TRUE,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- 6. CATÁLOGO DE CUENTAS CONTABLES (Estructura de árbol)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS cuentas_contables (
-    id              SERIAL PRIMARY KEY,
-    codigo          VARCHAR(20) NOT NULL UNIQUE,
-    nombre          VARCHAR(255) NOT NULL,
-    nivel           INTEGER NOT NULL DEFAULT 1,
-    padre_id        INTEGER REFERENCES cuentas_contables(id),
-    tipo            VARCHAR(50) NOT NULL CHECK (tipo IN ('Activo', 'Pasivo', 'Capital', 'Ingreso', 'Gasto', 'Otro')),
-    naturaleza      VARCHAR(10) NOT NULL CHECK (naturaleza IN ('Deudora', 'Acreedora')),
-    activo          BOOLEAN DEFAULT TRUE,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Insertar cuentas contables base (estructura de árbol)
-INSERT INTO cuentas_contables (codigo, nombre, nivel, padre_id, tipo, naturaleza) VALUES
-    ('1', 'ACTIVO', 1, NULL, 'Activo', 'Deudora'),
-    ('1.1', 'ACTIVO CIRCULANTE', 2, (SELECT id FROM cuentas_contables WHERE codigo = '1'), 'Activo', 'Deudora'),
-    ('1.1.1', 'CAJA Y BANCOS', 3, (SELECT id FROM cuentas_contables WHERE codigo = '1.1'), 'Activo', 'Deudora'),
-    ('1.1.1.1', 'Caja General', 4, (SELECT id FROM cuentas_contables WHERE codigo = '1.1.1'), 'Activo', 'Deudora'),
-    ('1.1.1.2', 'Bancos', 4, (SELECT id FROM cuentas_contables WHERE codigo = '1.1.1'), 'Activo', 'Deudora'),
-    ('1.1.2', 'CLIENTES', 3, (SELECT id FROM cuentas_contables WHERE codigo = '1.1'), 'Activo', 'Deudora'),
-    ('1.1.2.1', 'Cuentas por Cobrar Clientes', 4, (SELECT id FROM cuentas_contables WHERE codigo = '1.1.2'), 'Activo', 'Deudora'),
-    ('1.1.3', 'INVENTARIOS', 3, (SELECT id FROM cuentas_contables WHERE codigo = '1.1'), 'Activo', 'Deudora'),
-    ('1.1.3.1', 'Inventario de Mercancías', 4, (SELECT id FROM cuentas_contables WHERE codigo = '1.1.3'), 'Activo', 'Deudora'),
-    ('1.2', 'ACTIVO NO CIRCULANTE', 2, (SELECT id FROM cuentas_contables WHERE codigo = '1'), 'Activo', 'Deudora'),
-    ('1.2.1', 'PROPIEDAD, PLANTA Y EQUIPO', 3, (SELECT id FROM cuentas_contables WHERE codigo = '1.2'), 'Activo', 'Deudora'),
-    ('1.2.1.1', 'Equipo de Cómputo', 4, (SELECT id FROM cuentas_contables WHERE codigo = '1.2.1'), 'Activo', 'Deudora'),
-    ('1.2.1.2', 'Mobiliario y Equipo', 4, (SELECT id FROM cuentas_contables WHERE codigo = '1.2.1'), 'Activo', 'Deudora'),
-    ('2', 'PASIVO', 1, NULL, 'Pasivo', 'Acreedora'),
-    ('2.1', 'PASIVO CIRCULANTE', 2, (SELECT id FROM cuentas_contables WHERE codigo = '2'), 'Pasivo', 'Acreedora'),
-    ('2.1.1', 'PROVEEDORES', 3, (SELECT id FROM cuentas_contables WHERE codigo = '2.1'), 'Pasivo', 'Acreedora'),
-    ('2.1.1.1', 'Cuentas por Pagar Proveedores', 4, (SELECT id FROM cuentas_contables WHERE codigo = '2.1.1'), 'Pasivo', 'Acreedora'),
-    ('2.1.2', 'IMPUESTOS POR PAGAR', 3, (SELECT id FROM cuentas_contables WHERE codigo = '2.1'), 'Pasivo', 'Acreedora'),
-    ('2.1.2.1', 'IVA por Pagar', 4, (SELECT id FROM cuentas_contables WHERE codigo = '2.1.2'), 'Pasivo', 'Acreedora'),
-    ('2.1.2.2', 'ISR por Pagar', 4, (SELECT id FROM cuentas_contables WHERE codigo = '2.1.2'), 'Pasivo', 'Acreedora'),
-    ('3', 'CAPITAL CONTABLE', 1, NULL, 'Capital', 'Acreedora'),
-    ('3.1', 'CAPITAL SOCIAL', 2, (SELECT id FROM cuentas_contables WHERE codigo = '3'), 'Capital', 'Acreedora'),
-    ('3.1.1', 'Capital Social', 3, (SELECT id FROM cuentas_contables WHERE codigo = '3.1'), 'Capital', 'Acreedora'),
-    ('3.2', 'RESULTADOS', 2, (SELECT id FROM cuentas_contables WHERE codigo = '3'), 'Capital', 'Acreedora'),
-    ('3.2.1', 'Utilidad del Ejercicio', 3, (SELECT id FROM cuentas_contables WHERE codigo = '3.2'), 'Capital', 'Acreedora'),
-    ('4', 'INGRESOS', 1, NULL, 'Ingreso', 'Acreedora'),
-    ('4.1', 'INGRESOS POR VENTAS', 2, (SELECT id FROM cuentas_contables WHERE codigo = '4'), 'Ingreso', 'Acreedora'),
-    ('4.1.1', 'Venta de Mercancías', 3, (SELECT id FROM cuentas_contables WHERE codigo = '4.1'), 'Ingreso', 'Acreedora'),
-    ('5', 'GASTOS', 1, NULL, 'Gasto', 'Deudora'),
-    ('5.1', 'GASTOS DE OPERACIÓN', 2, (SELECT id FROM cuentas_contables WHERE codigo = '5'), 'Gasto', 'Deudora'),
-    ('5.1.1', 'Gastos Administrativos', 3, (SELECT id FROM cuentas_contables WHERE codigo = '5.1'), 'Gasto', 'Deudora'),
-    ('5.1.2', 'Gastos de Venta', 3, (SELECT id FROM cuentas_contables WHERE codigo = '5.1'), 'Gasto', 'Deudora'),
-    ('5.1.3', 'Costo de Ventas', 3, (SELECT id FROM cuentas_contables WHERE codigo = '5.1'), 'Gasto', 'Deudora')
-ON CONFLICT (codigo) DO NOTHING;
-
--- ============================================================
--- 7. UNIDADES DE TRANSPORTE
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS unidades_transporte (
-    id              SERIAL PRIMARY KEY,
-    placa           VARCHAR(20) NOT NULL UNIQUE,
-    modelo          VARCHAR(100),
-    chofer_entidad_id INTEGER REFERENCES entidades(id),
-    activo          BOOLEAN DEFAULT TRUE,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- ============================================================
--- 8. CONFIGURACIÓN DEL SISTEMA (existente, ampliada)
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS configuracion_sistema (
-    id              SERIAL PRIMARY KEY,
-    clave           VARCHAR(100) NOT NULL UNIQUE,
-    valor           TEXT NOT NULL,
-    descripcion     VARCHAR(255),
-    tipo_dato       VARCHAR(50) DEFAULT 'texto',
-    activo          BOOLEAN DEFAULT TRUE,
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Insertar configuraciones iniciales (ampliadas)
-INSERT INTO configuracion_sistema (clave, valor, descripcion, tipo_dato) VALUES
-    ('empresa_nombre', 'Mi Empresa S.A. de C.V.', 'Nombre legal de la empresa', 'texto'),
-    ('empresa_rfc', 'XAXX010101000', 'Registro Federal de Contribuyentes', 'texto'),
-    ('empresa_regimen_fiscal', '601', 'Régimen fiscal de la empresa (SAT)', 'texto'),
-    ('empresa_cp', '00000', 'Código postal de la empresa', 'texto'),
-    ('empresa_direccion', 'Dirección Fiscal', 'Dirección fiscal de la empresa', 'texto'),
-    ('moneda_base', 'MXN', 'Moneda base del sistema', 'texto'),
-    ('iva_porcentaje', '16', 'Porcentaje de IVA general', 'numero'),
-    ('version_sistema', '2.0.0', 'Versión actual del sistema ERP', 'texto'),
-    ('certificado_sat_archivo', '', 'Ruta al archivo .cer del SAT', 'texto'),
-    ('certificado_sat_key', '', 'Ruta al archivo .key del SAT', 'texto'),
-    ('certificado_sat_password', '', 'Password del key del SAT', 'texto'),
-    ('serie_factura_default', 'F', 'Serie por defecto para facturación', 'texto'),
-    ('lugar_expedicion', '00000', 'Lugar de expedición (CP)', 'texto')
-ON CONFLICT (clave) DO NOTHING;
-
--- ============================================================
--- 9. TABLAS EXISTENTES (roles, usuarios, artículos, etc.)
--- ============================================================
-
--- Tabla de roles
+-- Tabla de roles (necesaria para usuarios)
 CREATE TABLE IF NOT EXISTS roles (
     id              SERIAL PRIMARY KEY,
     nombre          VARCHAR(100) NOT NULL UNIQUE,
     descripcion     VARCHAR(255)
 );
 
--- Tabla de usuarios (modificada con entidad_id)
+INSERT INTO roles (nombre, descripcion) VALUES
+    ('admin', 'Administrador del sistema con acceso total'),
+    ('almacen', 'Usuario de almacén / inventario'),
+    ('ventas', 'Usuario del módulo de ventas'),
+    ('consulta', 'Usuario de solo lectura')
+ON CONFLICT (nombre) DO NOTHING;
+-- Tabla de usuarios
+
 CREATE TABLE IF NOT EXISTS usuarios (
     id              SERIAL PRIMARY KEY,
     email           VARCHAR(255) NOT NULL UNIQUE,
@@ -341,7 +172,23 @@ CREATE TABLE IF NOT EXISTS articulos (
     impuesto_id     INTEGER REFERENCES impuestos(id)
 );
 
--- Tabla de movimientos de inventario
+-- Tabla de almacenes
+CREATE TABLE IF NOT EXISTS almacenes (
+    id              SERIAL PRIMARY KEY,
+    nombre          VARCHAR(100) NOT NULL,
+    ubicacion       VARCHAR(255),
+    activo          BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO almacenes (nombre, ubicacion) VALUES
+    ('Almacén Central', 'Av. Principal #123, Col. Centro'),
+    ('Almacén Sucursal Norte', 'Blvd. Norte #456, Col. Industrial'),
+    ('Almacén Sucursal Sur', 'Calle Sur #789, Col. Comercial')
+ON CONFLICT DO NOTHING;
+
+-- Tabla de inventario_movimientos
 CREATE TABLE IF NOT EXISTS inventario_movimientos (
     id              SERIAL PRIMARY KEY,
     articulo_id     INTEGER NOT NULL REFERENCES articulos(id),
@@ -353,10 +200,7 @@ CREATE TABLE IF NOT EXISTS inventario_movimientos (
     creado_en       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
--- SECCIÓN 9-B: CONTROL DE FOLIOS (Secuencia atómica con bloqueo a nivel de fila)
--- ============================================================
-
+-- Control de folios
 CREATE TABLE IF NOT EXISTS control_folios (
     tipo_documento  VARCHAR(10) PRIMARY KEY,
     fecha_actual    DATE DEFAULT CURRENT_DATE,
@@ -366,51 +210,7 @@ CREATE TABLE IF NOT EXISTS control_folios (
 INSERT INTO control_folios (tipo_documento) VALUES ('VTA')
 ON CONFLICT (tipo_documento) DO NOTHING;
 
--- Función atómica para obtener folio de venta con bloqueo a nivel de fila
--- Características:
---   - Bloqueo FOR UPDATE para evitar duplicados en concurrencia
---   - Reinicio automático de secuencia cuando cambia la fecha
---   - Formato: VTA-YYYYMMDD-NNNN
-CREATE OR REPLACE FUNCTION obtener_folio_venta()
-RETURNS VARCHAR(20) AS $$
-DECLARE
-    v_folio     VARCHAR(20);
-    v_hoy       DATE := CURRENT_DATE;
-    v_ultimo    INTEGER;
-BEGIN
-    -- Bloquear la fila de 'VTA' para evitar condiciones de carrera
-    SELECT ultimo_numero, fecha_actual INTO v_ultimo, v_hoy
-    FROM control_folios
-    WHERE tipo_documento = 'VTA'
-    FOR UPDATE;
-
-    -- Si la fecha cambió, reiniciar contador
-    IF v_hoy <> CURRENT_DATE THEN
-        v_ultimo := 0;
-    END IF;
-
-    -- Incrementar contador
-    v_ultimo := v_ultimo + 1;
-
-    -- Actualizar la tabla con el nuevo valor
-    UPDATE control_folios
-    SET ultimo_numero = v_ultimo,
-        fecha_actual  = CURRENT_DATE
-    WHERE tipo_documento = 'VTA';
-
-    -- Generar folio con formato VTA-YYYYMMDD-NNNN
-    v_folio := 'VTA-' || TO_CHAR(CURRENT_DATE, 'YYYYMMDD') || '-' ||
-               LPAD(v_ultimo::TEXT, 4, '0');
-
-    RETURN v_folio;
-END;
-$$ LANGUAGE plpgsql;
-
--- ============================================================
--- 10. TABLAS TRANSACCIONALES (Ventas, Detalle, Contabilidad)
--- ============================================================
-
--- Tabla de ventas (modificada con modelo de entidades)
+-- Tabla ventas
 CREATE TABLE IF NOT EXISTS ventas (
     id              SERIAL PRIMARY KEY,
     cliente_id      INTEGER,
@@ -426,8 +226,7 @@ CREATE TABLE IF NOT EXISTS ventas (
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tabla de detalle de ventas
--- En ERP financiero nunca se borran transacciones, se cancelan cambiando estatus.
+-- Tabla ventas_detalle
 CREATE TABLE IF NOT EXISTS ventas_detalle (
     id              SERIAL PRIMARY KEY,
     venta_id        INTEGER NOT NULL REFERENCES ventas(id) ON DELETE RESTRICT,
@@ -438,21 +237,7 @@ CREATE TABLE IF NOT EXISTS ventas_detalle (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Aplicar cambio también en BD existentes (por si ya se ejecutó el script)
-DO $$ BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE constraint_name = 'ventas_detalle_venta_id_fkey'
-        AND constraint_type = 'FOREIGN KEY'
-    ) THEN
-        ALTER TABLE ventas_detalle DROP CONSTRAINT ventas_detalle_venta_id_fkey;
-    END IF;
-END $$;
-
-ALTER TABLE ventas_detalle ADD CONSTRAINT ventas_detalle_venta_id_fkey
-    FOREIGN KEY (venta_id) REFERENCES ventas(id) ON DELETE RESTRICT;
-
--- Tabla de asientos contables
+-- Tabla asientos_contables
 CREATE TABLE IF NOT EXISTS asientos_contables (
     id              SERIAL PRIMARY KEY,
     referencia_tipo VARCHAR(50) NOT NULL,
@@ -464,36 +249,49 @@ CREATE TABLE IF NOT EXISTS asientos_contables (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
--- 11. DATOS INICIALES
--- ============================================================
+-- Configuración del sistema
+CREATE TABLE IF NOT EXISTS configuracion_sistema (
+    id              SERIAL PRIMARY KEY,
+    clave           VARCHAR(100) NOT NULL UNIQUE,
+    valor           TEXT NOT NULL,
+    descripcion     VARCHAR(255),
+    tipo_dato       VARCHAR(50) DEFAULT 'texto',
+    activo          BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
--- Insertar roles iniciales
-INSERT INTO roles (nombre, descripcion) VALUES
-    ('admin', 'Administrador del sistema con acceso total'),
-    ('almacen', 'Usuario de almacén / inventario'),
-    ('ventas', 'Usuario del módulo de ventas'),
-    ('consulta', 'Usuario de solo lectura')
-ON CONFLICT (nombre) DO NOTHING;
+INSERT INTO configuracion_sistema (clave, valor, descripcion, tipo_dato) VALUES
+    ('empresa_nombre', 'Mi Empresa S.A. de C.V.', 'Nombre legal de la empresa', 'texto'),
+    ('empresa_rfc', 'XAXX010101000', 'Registro Federal de Contribuyentes', 'texto'),
+    ('empresa_regimen_fiscal', '601', 'Régimen fiscal de la empresa (SAT)', 'texto'),
+    ('empresa_cp', '00000', 'Código postal de la empresa', 'texto'),
+    ('empresa_direccion', 'Dirección Fiscal', 'Dirección fiscal de la empresa', 'texto'),
+    ('moneda_base', 'MXN', 'Moneda base del sistema', 'texto'),
+    ('iva_porcentaje', '16', 'Porcentaje de IVA general', 'numero'),
+    ('version_sistema', '2.0.0', 'Versión actual del sistema ERP', 'texto'),
+    ('certificado_sat_archivo', '', 'Ruta al archivo .cer del SAT', 'texto'),
+    ('certificado_sat_key', '', 'Ruta al archivo .key del SAT', 'texto'),
+    ('certificado_sat_password', '', 'Password del key del SAT', 'texto'),
+    ('serie_factura_default', 'F', 'Serie por defecto para facturación', 'texto'),
+    ('lugar_expedicion', '00000', 'Lugar de expedición (CP)', 'texto')
+ON CONFLICT (clave) DO NOTHING;
 
--- Insertar entidad por defecto (la propia empresa)
+-- Datos iniciales
 INSERT INTO entidades (razon_social, nombre_comercial, rfc, regimen_fiscal, direccion, cp)
 SELECT 'Mi Empresa S.A. de C.V.', 'SPI ERP', 'XAXX010101000', '601', 'Dirección Fiscal', '00000'
 WHERE NOT EXISTS (SELECT 1 FROM entidades WHERE rfc = 'XAXX010101000');
 
--- Asignar rol de vendedor a la entidad empresa
 INSERT INTO entidad_roles (entidad_id, rol)
 SELECT id, 'vendedor'::entidad_rol_enum FROM entidades WHERE rfc = 'XAXX010101000'
 ON CONFLICT (entidad_id, rol) DO NOTHING;
 
--- Insertar usuario administrador por defecto (password: admin123)
 INSERT INTO usuarios (email, password_hash, nombre, rol_id, entidad_id, activo)
 SELECT 'admin@spierp.com', '$2a$10$Ag8fxS7Od4dODbqyfGRueu.J7.hGwKFYLKY2AwBoXbuFR063qCFru', 'Administrador', r.id, e.id, TRUE
 FROM roles r, entidades e
 WHERE r.nombre = 'admin' AND e.rfc = 'XAXX010101000'
 ON CONFLICT (email) DO NOTHING;
 
--- Insertar artículos de ejemplo
 INSERT INTO articulos (sku, nombre, precio_venta, costo_promedio, clave_sat, stock_minimo) VALUES
     ('LAP001', 'Laptop HP ProBook 450', 18500.00, 14200.00, '43211509', 5),
     ('MON001', 'Monitor Dell 27" 4K', 8500.00, 6200.00, '43211509', 10),
@@ -502,7 +300,6 @@ INSERT INTO articulos (sku, nombre, precio_venta, costo_promedio, clave_sat, sto
     ('CAB001', 'Cable HDMI 2m', 180.00, 95.00, '43211509', 50)
 ON CONFLICT (sku) DO NOTHING;
 
--- Insertar movimientos de inventario iniciales
 INSERT INTO inventario_movimientos (articulo_id, cantidad, tipo_movimiento) 
 SELECT id, 50, 'inicial' FROM articulos WHERE sku = 'LAP001'
 UNION ALL
@@ -513,239 +310,3 @@ UNION ALL
 SELECT id, 80, 'inicial' FROM articulos WHERE sku = 'MOU001'
 UNION ALL
 SELECT id, 200, 'inicial' FROM articulos WHERE sku = 'CAB001';
-
--- ============================================================
--- 12. ÍNDICES
--- ============================================================
-
--- Índices de entidades
-CREATE INDEX IF NOT EXISTS idx_entidades_rfc ON entidades(rfc);
-CREATE INDEX IF NOT EXISTS idx_entidades_activo ON entidades(activo);
-CREATE INDEX IF NOT EXISTS idx_entidad_roles_entidad_id ON entidad_roles(entidad_id);
-CREATE INDEX IF NOT EXISTS idx_entidad_roles_rol ON entidad_roles(rol);
-
--- Índices de catálogos
-CREATE INDEX IF NOT EXISTS idx_monedas_codigo ON monedas(codigo);
-CREATE INDEX IF NOT EXISTS idx_paises_codigo ON paises(codigo);
-CREATE INDEX IF NOT EXISTS idx_impuestos_activo ON impuestos(activo);
-CREATE INDEX IF NOT EXISTS idx_formas_pago_clave_sat ON formas_pago(clave_sat);
-CREATE INDEX IF NOT EXISTS idx_listas_precios_activo ON listas_precios(activo);
-CREATE INDEX IF NOT EXISTS idx_almacenes_activo ON almacenes(activo);
-CREATE INDEX IF NOT EXISTS idx_bancos_clave ON bancos(clave_institucion);
-CREATE INDEX IF NOT EXISTS idx_cuentas_bancarias_entidad ON cuentas_bancarias(entidad_id);
-CREATE INDEX IF NOT EXISTS idx_cuentas_bancarias_clabe ON cuentas_bancarias(clabe);
-CREATE INDEX IF NOT EXISTS idx_cuentas_contables_codigo ON cuentas_contables(codigo);
-CREATE INDEX IF NOT EXISTS idx_cuentas_contables_padre ON cuentas_contables(padre_id);
-CREATE INDEX IF NOT EXISTS idx_cuentas_contables_tipo ON cuentas_contables(tipo);
-CREATE INDEX IF NOT EXISTS idx_unidades_transporte_placa ON unidades_transporte(placa);
-
--- Índices existentes
-CREATE INDEX IF NOT EXISTS idx_configuracion_sistema_clave ON configuracion_sistema(clave);
-CREATE INDEX IF NOT EXISTS idx_configuracion_sistema_activo ON configuracion_sistema(activo);
-CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email);
-CREATE INDEX IF NOT EXISTS idx_usuarios_rol_id ON usuarios(rol_id);
-CREATE INDEX IF NOT EXISTS idx_usuarios_entidad_id ON usuarios(entidad_id);
-CREATE INDEX IF NOT EXISTS idx_articulos_sku ON articulos(sku);
-CREATE INDEX IF NOT EXISTS idx_inventario_movimientos_articulo_id ON inventario_movimientos(articulo_id);
-CREATE INDEX IF NOT EXISTS idx_inventario_movimientos_tipo ON inventario_movimientos(tipo_movimiento);
-CREATE INDEX IF NOT EXISTS idx_inventario_movimientos_creado_en ON inventario_movimientos(creado_en);
-CREATE INDEX IF NOT EXISTS idx_ventas_folio ON ventas(folio);
-CREATE INDEX IF NOT EXISTS idx_ventas_cliente_id ON ventas(cliente_id);
-CREATE INDEX IF NOT EXISTS idx_ventas_entidad_cliente ON ventas(entidad_cliente_id);
-CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha);
-CREATE INDEX IF NOT EXISTS idx_ventas_detalle_venta_id ON ventas_detalle(venta_id);
-CREATE INDEX IF NOT EXISTS idx_ventas_detalle_articulo_id ON ventas_detalle(articulo_id);
-CREATE INDEX IF NOT EXISTS idx_asientos_contables_referencia ON asientos_contables(referencia_tipo, referencia_id);
-CREATE INDEX IF NOT EXISTS idx_asientos_contables_cuenta ON asientos_contables(cuenta_contable);
-CREATE INDEX IF NOT EXISTS idx_asientos_contables_fecha ON asientos_contables(fecha);
-
--- ============================================================
--- 13. SISTEMA DE AUDITORÍA ESTILO SAP (CDHDR/CDPOS)
--- ============================================================
-
--- Tabla de cabecera de log de modificaciones (como CDHDR de SAP)
-CREATE TABLE IF NOT EXISTS log_modificaciones_cabecera (
-    id              SERIAL PRIMARY KEY,
-    tabla_afectada  VARCHAR(100) NOT NULL,
-    registro_id     INTEGER NOT NULL,
-    tipo_operacion  CHAR(1) NOT NULL CHECK (tipo_operacion IN ('I', 'U', 'D')),
-    usuario_id      INTEGER REFERENCES usuarios(id),
-    fecha           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ip_origen       VARCHAR(45),
-    comentario      TEXT
-);
-
--- Tabla de detalle de log de modificaciones (como CDPOS de SAP)
-CREATE TABLE IF NOT EXISTS log_modificaciones_detalle (
-    id              SERIAL PRIMARY KEY,
-    cabecera_id     INTEGER NOT NULL REFERENCES log_modificaciones_cabecera(id) ON DELETE CASCADE,
-    campo_afectado  VARCHAR(100) NOT NULL,
-    valor_anterior  TEXT,
-    valor_nuevo     TEXT
-);
-
--- Índices para auditoría
-CREATE INDEX IF NOT EXISTS idx_log_cabecera_tabla_registro ON log_modificaciones_cabecera(tabla_afectada, registro_id);
-CREATE INDEX IF NOT EXISTS idx_log_cabecera_fecha ON log_modificaciones_cabecera(fecha);
-CREATE INDEX IF NOT EXISTS idx_log_cabecera_usuario ON log_modificaciones_cabecera(usuario_id);
-CREATE INDEX IF NOT EXISTS idx_log_detalle_cabecera ON log_modificaciones_detalle(cabecera_id);
-
--- ============================================================
--- 14. FUNCIÓN Y TRIGGERS DE AUDITORÍA
--- ============================================================
-
-CREATE OR REPLACE FUNCTION fn_auditar_cambios()
-RETURNS TRIGGER AS $$
-DECLARE
-    v_cabecera_id INTEGER;
-    v_ip VARCHAR(45);
-    v_comentario TEXT;
-    v_campos_excluidos TEXT[] := ARRAY['created_at', 'updated_at', 'creado_en'];
-    v_col_name TEXT;
-    v_old_val TEXT;
-    v_new_val TEXT;
-BEGIN
-    -- Obtener IP desde la variable de sesión (se setea desde la app)
-    v_ip := current_setting('app.ip_origen', true);
-    IF v_ip IS NULL OR v_ip = '' THEN
-        v_ip := '127.0.0.1';
-    END IF;
-
-    v_comentario := current_setting('app.comentario', true);
-    IF v_comentario IS NULL THEN
-        v_comentario := '';
-    END IF;
-
-    -- ============================================================
-    -- OPERACIÓN: INSERT
-    -- ============================================================
-    IF TG_OP = 'INSERT' THEN
-        INSERT INTO log_modificaciones_cabecera (
-            tabla_afectada, registro_id, tipo_operacion, usuario_id, ip_origen, comentario
-        ) VALUES (
-            TG_TABLE_NAME, NEW.id, 'I',
-            COALESCE(current_setting('app.usuario_id', true)::INTEGER, NULL),
-            v_ip, v_comentario
-        )
-        RETURNING id INTO v_cabecera_id;
-
-        -- Registrar todos los valores insertados como valor_nuevo
-        FOR v_col_name IN
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = TG_TABLE_NAME
-              AND column_name != 'id'
-              AND column_name != ALL(v_campos_excluidos)
-            ORDER BY ordinal_position
-        LOOP
-            EXECUTE format('SELECT ($1).%I::TEXT', v_col_name) USING NEW INTO v_new_val;
-            IF v_new_val IS NOT NULL THEN
-                INSERT INTO log_modificaciones_detalle (cabecera_id, campo_afectado, valor_anterior, valor_nuevo)
-                VALUES (v_cabecera_id, v_col_name, NULL, v_new_val);
-            END IF;
-        END LOOP;
-
-        RETURN NEW;
-
-    -- ============================================================
-    -- OPERACIÓN: DELETE
-    -- ============================================================
-    ELSIF TG_OP = 'DELETE' THEN
-        INSERT INTO log_modificaciones_cabecera (
-            tabla_afectada, registro_id, tipo_operacion, usuario_id, ip_origen, comentario
-        ) VALUES (
-            TG_TABLE_NAME, OLD.id, 'D',
-            COALESCE(current_setting('app.usuario_id', true)::INTEGER, NULL),
-            v_ip, v_comentario
-        )
-        RETURNING id INTO v_cabecera_id;
-
-        -- Registrar todos los valores eliminados como valor_anterior
-        FOR v_col_name IN
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = TG_TABLE_NAME
-              AND column_name != 'id'
-              AND column_name != ALL(v_campos_excluidos)
-            ORDER BY ordinal_position
-        LOOP
-            EXECUTE format('SELECT ($1).%I::TEXT', v_col_name) USING OLD INTO v_old_val;
-            IF v_old_val IS NOT NULL THEN
-                INSERT INTO log_modificaciones_detalle (cabecera_id, campo_afectado, valor_anterior, valor_nuevo)
-                VALUES (v_cabecera_id, v_col_name, v_old_val, NULL);
-            END IF;
-        END LOOP;
-
-        RETURN OLD;
-
-    -- ============================================================
-    -- OPERACIÓN: UPDATE
-    -- ============================================================
-    ELSIF TG_OP = 'UPDATE' THEN
-        INSERT INTO log_modificaciones_cabecera (
-            tabla_afectada, registro_id, tipo_operacion, usuario_id, ip_origen, comentario
-        ) VALUES (
-            TG_TABLE_NAME, NEW.id, 'U',
-            COALESCE(current_setting('app.usuario_id', true)::INTEGER, NULL),
-            v_ip, v_comentario
-        )
-        RETURNING id INTO v_cabecera_id;
-
-        -- Comparar OLD vs NEW campo por campo
-        FOR v_col_name IN
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = TG_TABLE_NAME
-              AND column_name != 'id'
-              AND column_name != ALL(v_campos_excluidos)
-            ORDER BY ordinal_position
-        LOOP
-            EXECUTE format('SELECT ($1).%I::TEXT', v_col_name) USING OLD INTO v_old_val;
-            EXECUTE format('SELECT ($1).%I::TEXT', v_col_name) USING NEW INTO v_new_val;
-
-            IF v_old_val IS DISTINCT FROM v_new_val THEN
-                INSERT INTO log_modificaciones_detalle (cabecera_id, campo_afectado, valor_anterior, valor_nuevo)
-                VALUES (v_cabecera_id, v_col_name, v_old_val, v_new_val);
-            END IF;
-        END LOOP;
-
-        RETURN NEW;
-    END IF;
-
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
--- ============================================================
--- TRIGGERS DE AUDITORÍA POR TABLA
--- ============================================================
-
--- Trigger para ventas
-DROP TRIGGER IF EXISTS trg_auditar_ventas ON ventas;
-CREATE TRIGGER trg_auditar_ventas
-AFTER INSERT OR UPDATE OR DELETE ON ventas
-FOR EACH ROW EXECUTE FUNCTION fn_auditar_cambios();
-
--- Trigger para ventas_detalle
-DROP TRIGGER IF EXISTS trg_auditar_ventas_detalle ON ventas_detalle;
-CREATE TRIGGER trg_auditar_ventas_detalle
-AFTER INSERT OR UPDATE OR DELETE ON ventas_detalle
-FOR EACH ROW EXECUTE FUNCTION fn_auditar_cambios();
-
--- Trigger para inventario_movimientos
-DROP TRIGGER IF EXISTS trg_auditar_inventario_movimientos ON inventario_movimientos;
-CREATE TRIGGER trg_auditar_inventario_movimientos
-AFTER INSERT OR UPDATE OR DELETE ON inventario_movimientos
-FOR EACH ROW EXECUTE FUNCTION fn_auditar_cambios();
-
--- Trigger para articulos
-DROP TRIGGER IF EXISTS trg_auditar_articulos ON articulos;
-CREATE TRIGGER trg_auditar_articulos
-AFTER INSERT OR UPDATE OR DELETE ON articulos
-FOR EACH ROW EXECUTE FUNCTION fn_auditar_cambios();
-
--- Trigger para entidades
-DROP TRIGGER IF EXISTS trg_auditar_entidades ON entidades;
-CREATE TRIGGER trg_auditar_entidades
-AFTER INSERT OR UPDATE OR DELETE ON entidades
-FOR EACH ROW EXECUTE FUNCTION fn_auditar_cambios();

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const InventarioModel = require('../models/inventario.model');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth'); // ✅ Esto es la función correcta
 
 /**
  * GET /api/v1/inventario
