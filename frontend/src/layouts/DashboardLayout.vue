@@ -127,7 +127,14 @@
 
     <!-- Contenido principal -->
     <v-main>
-      <v-container fluid class="pa-6">
+      <!-- Indicador de carga mientras se obtienen permisos -->
+      <v-container v-if="loading" fluid class="pa-6 d-flex justify-center align-center" style="min-height: 500px;">
+        <div class="text-center">
+          <v-progress-circular indeterminate color="primary" size="64" width="6" />
+          <p class="mt-4 text-body-1 text-medium-emphasis">Cargando...</p>
+        </div>
+      </v-container>
+      <v-container v-else fluid class="pa-6">
         <router-view />
       </v-container>
     </v-main>
@@ -141,6 +148,7 @@ import axios from 'axios'
 
 const router = useRouter()
 const drawer = ref(true)
+const loading = ref(true)
 const usuario = ref({})
 const permisosUsuario = ref([])
 
@@ -153,23 +161,36 @@ onMounted(() => {
 })
 
 async function cargarPermisos() {
+  loading.value = true
   try {
     const token = localStorage.getItem('token')
-    if (!token) return
+    if (!token) {
+      loading.value = false
+      return
+    }
     const response = await axios.get('/api/v1/auth/mis-permisos', {
       headers: { Authorization: `Bearer ${token}` },
     })
     permisosUsuario.value = response.data.permisos || []
   } catch (err) {
-    console.warn('No se pudieron cargar permisos:', err)
-    // Si falla, permitir todo por seguridad
-    permisosUsuario.value = []
+    console.warn('No se pudieron cargar permisos, se otorgarán todos los permisos:', err)
+    // Fallback: asignar todos los permisos para que el dashboard funcione
+    permisosUsuario.value = [
+      'ventas.ver',
+      'compras.ver',
+      'inventario.ver',
+      'contabilidad.ver',
+      'fiscal.ver',
+      'crm.ver',
+      'pos.usar',
+      'admin.configurar',
+    ]
+  } finally {
+    loading.value = false
   }
 }
 
 function tienePermiso(codigo) {
-  // Si no hay permisos cargados, permitir (comportamiento permisivo)
-  if (permisosUsuario.value.length === 0) return true
   return permisosUsuario.value.includes(codigo)
 }
 

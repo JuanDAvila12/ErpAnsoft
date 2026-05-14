@@ -129,24 +129,54 @@
 ### Configuración:
 - Se generó commit: "feat: landing page Odoo-like, portal clientes, RBAC y POS"
 
-## 0013 - Modelo unificado TransaccionesModel y rutas /api/v1/transacciones
-### SQL (db/migration_v4_unificacion.sql):
-- Creación de tablas unificadas: transacciones, transacciones_detalle, transacciones_series, transacciones_contables y cuentas_contables
-- Migración de datos desde documentos_venta, documentos_compra, inventario_movimientos, articulos_series y asientos_contables
-- Índices y triggers de auditoría para las nuevas tablas
-- Nuevos tipos en control_folios: AJU, ENT, SAL
+## 0010 - Módulo de Ventas completo con trazabilidad y chatter de auditoría
+- Modelo `documentosVenta.model.js` con métodos: crearDocumento, convertirDocumento, cancelar, findAll, findById
+- Rutas `documentosVenta.routes.js` con endpoints: GET, GET /:id, GET /:id/historial, POST, POST /convertir/:origenId, POST /:id/cancelar
+- Vistas Vue 3/Vuetify: CotizacionesView, OrdenesView, FacturasView con tablas, filtros, diálogos de creación y acciones
+- Vista de detalle DocumentoVentaDetalle con trazabilidad origen/destino y panel CHATTER con v-timeline
+- Endpoint de historial que consulta log_modificaciones_cabecera y log_modificaciones_detalle.
+- Trazabilidad completa entre cotización → orden de venta → factura/venta con transacciones ACID.
 
+## 0011 - Sistema de facturación electrónica CFDI 4.0 completo
+- Generación de XML CFDI 4.0 desde api-python con catálogos SAT
+- Endpoint POST /api/v1/fiscal/timbrar/{documento_venta_id}
+- Consulta de comprobantes fiscales con UUID, XML, estado
+- Vistas frontend: CFDIView, TimbradoView, CancelacionesView con VDataTable y acciones
+- Panel de historial (CHATTER) para CFDI
+- Integración con documentos de venta: actualiza estado a facturado y vincula comprobante
+
+## 0012 - Módulo de Compras completo con flujo de etapas, trazabilidad y chatter de auditoría
 ### Node.js (api-node/):
-- `src/models/transacciones.model.js`: Nuevo modelo unificado con métodos:
-  - crearTransaccion(tipo, datos, req): Crea cualquier tipo de transacción con folio atómico, validación de roles, cálculo de totales, inserción de detalles, movimientos de inventario, manejo de series y generación automática de asientos contables
-  - convertirTransaccion(origenId, nuevoTipo, req): Conversión lógica entre tipos (cotizacion→orden_venta→venta, orden_compra→compra)
-  - cancelarTransaccion(id, req): Cancelación con reversión de inventario y liberación de series
-  - findAll(filtros): Búsqueda con filtros por tipo, estado, cliente, proveedor, fechas
-  - findById(id): Consulta completa con JOIN a entidades, series, detalles con sub-series, asientos contables, origen y destino
-- `src/routes/transacciones.routes.js`: Rutas protegidas GET/POST /api/v1/transacciones, GET /:id, GET /:id/historial, POST /convertir/:origenId, POST /:id/cancelar
-- `api-node/index.js`: Registro de ruta /api/v1/transacciones
+- **src/models/documentosCompra.model.js** (actualizado): 
+  - `crearDocumento(tipo, datos, req)`: Valida proveedor con rol 'proveedor', obtiene serie por defecto, genera folio atómico con `obtener_folio('OC'/'COM')`, calcula total, inserta en documentos_compra con estado 'confirmado', inserta líneas en documentos_compra_detalle, genera movimientos de inventario de entrada para tipo 'compra', actualiza costo_promedio con promedio ponderado simple. Transacción BEGIN/COMMIT/ROLLBACK con setAuditContext.
+  - `convertirDocumento(origenId, nuevoTipo, req)`: Toma documento origen (orden_compra), crea compra con los mismos detalles, establece documento_origen_id, genera movimientos de entrada y actualiza costo_promedio.
+  - `cancelar(id, req)`: Si es compra, revierte inventario con movimiento de salida. Cambia estado a 'cancelado'.
+  - `findAll(filtros)`: Con JOINs a entidades y series, filtros por tipo/estado/proveedor.
+  - `findById(id)`: Con JOINs, subconsultas para origen y destino (trazabilidad).
+- **src/routes/documentosCompra.routes.js** (actualizado):
+  - GET / → listar con filtros
+  - GET /:id → detalle con origen/destino
+  - GET /:id/historial → auditoría desde log_modificaciones_cabecera/detalle
+  - POST / → crear documento (orden_compra o compra)
+  - POST /convertir/:origenId → convertir orden_compra → compra
+  - POST /:id/cancelar → cancelar con reversión de inventario
+  - Todas protegidas con authMiddleware
 
-### Backward compatibility:
-- `src/routes/documentosVenta.routes.js`: Reescrito como wrapper que redirige todo a TransaccionesModel con mapeo de campos
-- `src/routes/documentosCompra.routes.js`: Reescrito como wrapper que redirige todo a TransaccionesModel con mapeo de campos
-- Los endpoints antiguos (/api/v1/documentos-venta, /api/v1/documentos-compra) siguen funcionando sin cambios en el frontend
+### Frontend (frontend/):
+- **src/views/compras/OrdenesCompraView.vue**: Listado de órdenes de compra con v-data-table, filtros, diálogo de creación con autocomplete de proveedores/artículos, acciones de convertir a compra y cancelar. Iconos: mdi-plus-circle, mdi-content-save, mdi-cancel, mdi-arrow-decision.
+- **src/views/compras/ComprasView.vue**: Listado de compras con columna de origen, diálogo de creación directa de compra con entrada de inventario.
+- **src/views/compras/DocumentoCompraDetalle.vue**: Vista de detalle con cabecera, líneas, trazabilidad origen/destino con enlaces, panel CHATTER con v-timeline mostrando historial de auditoría (tipo_operación I/U/D, usuario, fecha, campos modificados).
+- **src/router/index.js**: Agregadas rutas /dashboard/compras/compras, /dashboard/compras/:id
+
+### Trazabilidad:
+- `convertirDocumento` establece correctamente `documento_origen_id` en el nuevo documento
+- `findById` incluye subconsultas para origen (documento que lo originó) y destino (documento creado a partir de éste)
+- Vistas muestran alerts con enlaces navegables: "Proviene de [Tipo] [Folio]" y "Convertido a [Tipo] [Folio]"
+
+### Iconografía:
+- Crear nuevo: mdi-plus-circle
+- Editar: mdi-pencil
+- Guardar: mdi-content-save
+- Cancelar: mdi-cancel
+- Convertir: mdi-arrow-decision
+- Ver historial: mdi-history

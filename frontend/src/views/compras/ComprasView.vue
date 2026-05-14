@@ -4,16 +4,16 @@
     <v-row class="mb-4">
       <v-col cols="12" md="8">
         <div class="d-flex align-center">
-          <v-icon size="36" color="success" class="mr-3">mdi-file-document</v-icon>
+          <v-icon size="36" color="success" class="mr-3">mdi-package-down</v-icon>
           <div>
-            <h2 class="text-h5 font-weight-bold mb-0">Órdenes de Compra</h2>
-            <p class="text-body-2 text-medium-emphasis mt-0 mb-0">Gestión de órdenes de compra a proveedores</p>
+            <h2 class="text-h5 font-weight-bold mb-0">Compras</h2>
+            <p class="text-body-2 text-medium-emphasis mt-0 mb-0">Gestión de compras y recepción de mercancía</p>
           </div>
         </div>
       </v-col>
       <v-col cols="12" md="4" class="text-right d-flex align-center justify-end">
         <v-btn color="success" variant="elevated" prepend-icon="mdi-plus-circle" @click="abrirDialogoNuevo()">
-          Nueva Orden
+          Nueva Compra
         </v-btn>
       </v-col>
     </v-row>
@@ -22,7 +22,7 @@
     <v-card class="mb-4" variant="outlined">
       <v-card-text>
         <v-row align="center">
-          <v-col cols="12" sm="4" md="3">
+          <v-col cols="12" sm="3" md="2">
             <v-text-field
               v-model="filtros.estado"
               label="Estado"
@@ -32,17 +32,17 @@
               hide-details
             />
           </v-col>
-          <v-col cols="12" sm="4" md="3">
+          <v-col cols="12" sm="3" md="2">
             <v-text-field
               v-model="filtros.proveedor"
               label="ID Proveedor"
-              placeholder="Filtrar por ID de proveedor"
+              placeholder="Filtrar por ID"
               variant="outlined"
               density="compact"
               hide-details
             />
           </v-col>
-          <v-col cols="12" sm="4" md="3">
+          <v-col cols="12" sm="6" md="4">
             <v-btn variant="outlined" prepend-icon="mdi-filter" @click="cargarDatos()" class="mr-2">
               Filtrar
             </v-btn>
@@ -60,9 +60,8 @@
         :headers="columnas"
         :items="documentos"
         :loading="loading"
-        loading-text="Cargando órdenes de compra..."
+        loading-text="Cargando compras..."
         :items-per-page="20"
-        :footer-props="{ 'items-per-page-options': [10, 20, 50, 100] }"
         class="elevation-0"
         @click:row="irADetalle"
       >
@@ -71,6 +70,13 @@
         </template>
         <template v-slot:item.proveedor_nombre="{ item }">
           {{ item.proveedor_nombre || '—' }}
+        </template>
+        <template v-slot:item.origen="{ item }">
+          <span v-if="item.documento_origen_id" class="text-caption">
+            <v-icon size="small" class="mr-1">mdi-arrow-decision</v-icon>
+            Desde OC #{{ item.documento_origen_id }}
+          </span>
+          <span v-else class="text-medium-emphasis">—</span>
         </template>
         <template v-slot:item.total="{ item }">
           ${{ Number(item.total).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
@@ -93,14 +99,6 @@
             <v-tooltip activator="parent" location="bottom">Ver detalle</v-tooltip>
           </v-btn>
           <v-btn
-            v-if="item.estado === 'confirmado' && item.tipo === 'orden_compra'"
-            icon size="small" variant="text" color="success"
-            @click.stop="convertirACompra(item)"
-          >
-            <v-icon>mdi-arrow-decision</v-icon>
-            <v-tooltip activator="parent" location="bottom">Convertir a Compra</v-tooltip>
-          </v-btn>
-          <v-btn
             v-if="item.estado === 'confirmado'"
             icon size="small" variant="text" color="error"
             @click.stop="confirmarCancelar(item)"
@@ -112,12 +110,12 @@
       </v-data-table>
     </v-card>
 
-    <!-- Diálogo Nueva Orden de Compra -->
+    <!-- Diálogo Nueva Compra -->
     <v-dialog v-model="dialogoNuevo" max-width="800px" persistent scrollable>
       <v-card>
         <v-card-title class="text-h5 bg-success text-white pa-4">
           <v-icon class="mr-2">mdi-plus-circle</v-icon>
-          Nueva Orden de Compra
+          Nueva Compra Directa
         </v-card-title>
         <v-card-text class="pa-4">
           <v-form ref="formNuevo">
@@ -132,7 +130,6 @@
                   variant="outlined"
                   density="compact"
                   :loading="buscandoProveedores"
-                  :search-input.sync="busquedaProveedor"
                   @update:search="buscarProveedores"
                   required
                   clearable
@@ -148,7 +145,7 @@
                   :items="almacenes"
                   item-title="nombre"
                   item-value="id"
-                  label="Almacén"
+                  label="Almacén *"
                   variant="outlined"
                   density="compact"
                   clearable
@@ -194,13 +191,12 @@
                   variant="outlined"
                   density="compact"
                   :loading="buscandoArticulos"
-                  :search-input.sync="busquedaArticulo"
                   @update:search="buscarArticulos"
                   hide-details
                   clearable
                 >
                   <template v-slot:item="{ props, item }">
-                    <v-list-item v-bind="props" :subtitle="`SKU: ${item.raw.sku} | Costo: $${Number(item.raw.costo_promedio).toFixed(2)}`" />
+                    <v-list-item v-bind="props" :subtitle="`SKU: ${item.raw.sku} | Costo actual: $${Number(item.raw.costo_promedio).toFixed(2)}`" />
                   </template>
                 </v-autocomplete>
               </v-col>
@@ -219,14 +215,14 @@
               <v-col cols="3">
                 <v-text-field
                   v-model.number="art.precio_unitario"
-                  label="Precio Unit."
+                  label="Precio Compra"
                   type="number"
                   variant="outlined"
                   density="compact"
                   min="0"
                   step="0.01"
                   hide-details
-                  :suffix="'$'"
+                  suffix="$"
                 />
               </v-col>
               <v-col cols="1" class="text-center">
@@ -236,13 +232,7 @@
               </v-col>
             </v-row>
 
-            <v-btn
-              variant="outlined"
-              size="small"
-              prepend-icon="mdi-plus"
-              @click="agregarArticulo"
-              class="mt-2"
-            >
+            <v-btn variant="outlined" size="small" prepend-icon="mdi-plus" @click="agregarArticulo" class="mt-2">
               Agregar Artículo
             </v-btn>
 
@@ -261,7 +251,7 @@
           <v-spacer />
           <v-btn variant="outlined" @click="dialogoNuevo = false">Cancelar</v-btn>
           <v-btn color="success" prepend-icon="mdi-content-save" :loading="guardando" @click="guardarNuevo">
-            Guardar
+            Guardar y Entrar Mercancía
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -275,8 +265,8 @@
           Confirmar Cancelación
         </v-card-title>
         <v-card-text class="pa-4">
-          <p>¿Estás seguro de cancelar el documento <strong>{{ documentoACancelar?.folio }}</strong>?</p>
-          <p class="text-caption text-medium-emphasis">Esta acción no se puede deshacer.</p>
+          <p>¿Estás seguro de cancelar la compra <strong>{{ documentoACancelar?.folio }}</strong>?</p>
+          <p class="text-caption text-medium-emphasis">Se revertirá el inventario asociado.</p>
         </v-card-text>
         <v-card-actions class="pa-4 pt-0">
           <v-spacer />
@@ -312,28 +302,24 @@ const terminosPago = ref([])
 const articulos = ref([])
 const buscandoProveedores = ref(false)
 const buscandoArticulos = ref(false)
-const busquedaProveedor = ref('')
-const busquedaArticulo = ref('')
 const dialogoNuevo = ref(false)
 const dialogoCancelar = ref(false)
 const documentoACancelar = ref(null)
 
 const metodosPago = ['efectivo', 'transferencia', 'cheque', 'tarjeta_credito', 'tarjeta_debito']
 
-const filtros = ref({
-  estado: '',
-  proveedor: '',
-})
+const filtros = ref({ estado: '', proveedor: '' })
 
 const snackbar = ref({ show: false, text: '', color: 'success' })
 
 const columnas = [
   { title: 'Folio', key: 'folio', sortable: true },
   { title: 'Proveedor', key: 'proveedor_nombre', sortable: true },
+  { title: 'Origen', key: 'origen', sortable: false },
   { title: 'Fecha', key: 'fecha', sortable: true },
   { title: 'Total', key: 'total', sortable: true, align: 'end' },
   { title: 'Estado', key: 'estado', sortable: true },
-  { title: 'Acciones', key: 'acciones', sortable: false, align: 'center', width: '120px' },
+  { title: 'Acciones', key: 'acciones', sortable: false, align: 'center', width: '100px' },
 ]
 
 const nuevoDocumento = ref({
@@ -414,7 +400,7 @@ async function cargarDatos() {
   loading.value = true
   try {
     const token = localStorage.getItem('token')
-    const params = { tipo: 'orden_compra' }
+    const params = { tipo: 'compra' }
     if (filtros.value.estado) params.estado = filtros.value.estado
     if (filtros.value.proveedor) params.proveedor = filtros.value.proveedor
 
@@ -424,8 +410,8 @@ async function cargarDatos() {
     })
     documentos.value = res.data || []
   } catch (err) {
-    console.error('Error al cargar órdenes de compra:', err)
-    snackbar.value = { show: true, text: 'Error al cargar órdenes de compra', color: 'error' }
+    console.error('Error al cargar compras:', err)
+    snackbar.value = { show: true, text: 'Error al cargar compras', color: 'error' }
   } finally {
     loading.value = false
   }
@@ -461,7 +447,7 @@ async function guardarNuevo() {
   try {
     const token = localStorage.getItem('token')
     const payload = {
-      tipo: 'orden_compra',
+      tipo: 'compra',
       proveedor_entidad_id: nuevoDocumento.value.proveedor_entidad_id,
       almacen_id: nuevoDocumento.value.almacen_id,
       metodo_pago: nuevoDocumento.value.metodo_pago,
@@ -478,11 +464,11 @@ async function guardarNuevo() {
     })
 
     dialogoNuevo.value = false
-    snackbar.value = { show: true, text: 'Orden de compra creada exitosamente', color: 'success' }
+    snackbar.value = { show: true, text: 'Compra registrada exitosamente', color: 'success' }
     await cargarDatos()
   } catch (err) {
-    console.error('Error al crear orden de compra:', err)
-    snackbar.value = { show: true, text: err.response?.data?.error || 'Error al crear orden de compra', color: 'error' }
+    console.error('Error al crear compra:', err)
+    snackbar.value = { show: true, text: err.response?.data?.error || 'Error al registrar compra', color: 'error' }
   } finally {
     guardando.value = false
   }
@@ -506,27 +492,13 @@ async function cancelarDocumento() {
       headers: { Authorization: `Bearer ${token}` }
     })
     dialogoCancelar.value = false
-    snackbar.value = { show: true, text: 'Documento cancelado exitosamente', color: 'success' }
+    snackbar.value = { show: true, text: 'Compra cancelada exitosamente', color: 'success' }
     await cargarDatos()
   } catch (err) {
     console.error('Error al cancelar:', err)
     snackbar.value = { show: true, text: err.response?.data?.error || 'Error al cancelar', color: 'error' }
   } finally {
     cancelando.value = false
-  }
-}
-
-async function convertirACompra(item) {
-  try {
-    const token = localStorage.getItem('token')
-    await axios.post(`/api/v1/documentos-compra/convertir/${item.id}`, { nuevo_tipo: 'compra' }, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    snackbar.value = { show: true, text: 'Orden convertida a compra exitosamente', color: 'success' }
-    await cargarDatos()
-  } catch (err) {
-    console.error('Error al convertir:', err)
-    snackbar.value = { show: true, text: err.response?.data?.error || 'Error al convertir', color: 'error' }
   }
 }
 

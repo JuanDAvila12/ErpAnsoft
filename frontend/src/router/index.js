@@ -19,8 +19,10 @@ import ClientesView from '../views/ventas/ClientesView.vue'
 
 // Compras
 import OrdenesCompraView from '../views/compras/OrdenesCompraView.vue'
+import ComprasView from '../views/compras/ComprasView.vue'
 import RecepcionesView from '../views/compras/RecepcionesView.vue'
 import ProveedoresView from '../views/compras/ProveedoresView.vue'
+import DocumentoCompraDetalle from '../views/compras/DocumentoCompraDetalle.vue'
 
 // Inventario
 import ArticulosView from '../views/inventario/ArticulosView.vue'
@@ -114,6 +116,18 @@ const routes = [
         path: 'compras/ordenes',
         name: 'OrdenesCompra',
         component: OrdenesCompraView,
+        meta: { requierePermiso: 'compras.ver' },
+      },
+      {
+        path: 'compras/compras',
+        name: 'Compras',
+        component: ComprasView,
+        meta: { requierePermiso: 'compras.ver' },
+      },
+      {
+        path: 'compras/:id',
+        name: 'DocumentoCompraDetalle',
+        component: DocumentoCompraDetalle,
         meta: { requierePermiso: 'compras.ver' },
       },
       {

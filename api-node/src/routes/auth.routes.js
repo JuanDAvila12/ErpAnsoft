@@ -214,5 +214,27 @@ router.get('/mis-permisos', authMiddleware, async (req, res) => {
     });
   }
 });
+// GET /api/v1/auth/mis-permisos
+router.get('/mis-permisos', authMiddleware, async (req, res) => {
+  try {
+    const usuario = req.usuario;
+    if (!usuario || !usuario.rol_id) {
+      return res.status(400).json({ error: 'Usuario sin rol asignado' });
+    }
 
+    const result = await pool.query(
+      `SELECT p.codigo
+       FROM permisos p
+       JOIN rol_permisos rp ON rp.permiso_id = p.id
+       WHERE rp.rol_id = $1`,
+      [usuario.rol_id]
+    );
+
+    const permisos = result.rows.map(row => row.codigo);
+    res.json({ permisos });
+  } catch (err) {
+    console.error('[Auth] Error al obtener permisos:', err);
+    res.status(500).json({ error: 'Error al obtener permisos' });
+  }
+});
 module.exports = router;
