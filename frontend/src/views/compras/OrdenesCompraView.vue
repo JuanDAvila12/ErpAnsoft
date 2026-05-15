@@ -416,13 +416,13 @@ async function cargarDatos() {
     const token = localStorage.getItem('token')
     const params = { tipo: 'orden_compra' }
     if (filtros.value.estado) params.estado = filtros.value.estado
-    if (filtros.value.proveedor) params.proveedor = filtros.value.proveedor
+    if (filtros.value.proveedor) params.entidad_proveedor_id = filtros.value.proveedor
 
-    const res = await axios.get('/api/v1/documentos-compra', {
+    const res = await axios.get('/api/v1/transacciones', {
       headers: { Authorization: `Bearer ${token}` },
       params,
     })
-    documentos.value = res.data || []
+    documentos.value = res.data?.datos || res.data || []
   } catch (err) {
     console.error('Error al cargar órdenes de compra:', err)
     snackbar.value = { show: true, text: 'Error al cargar órdenes de compra', color: 'error' }
@@ -473,7 +473,7 @@ async function guardarNuevo() {
       })),
     }
 
-    await axios.post('/api/v1/documentos-compra', payload, {
+    await axios.post('/api/v1/transacciones', payload, {
       headers: { Authorization: `Bearer ${token}` }
     })
 
@@ -502,7 +502,7 @@ async function cancelarDocumento() {
   cancelando.value = true
   try {
     const token = localStorage.getItem('token')
-    await axios.post(`/api/v1/documentos-compra/${documentoACancelar.value.id}/cancelar`, {}, {
+    await axios.post(`/api/v1/transacciones/${documentoACancelar.value.id}/cancelar`, {}, {
       headers: { Authorization: `Bearer ${token}` }
     })
     dialogoCancelar.value = false
@@ -519,7 +519,7 @@ async function cancelarDocumento() {
 async function convertirACompra(item) {
   try {
     const token = localStorage.getItem('token')
-    await axios.post(`/api/v1/documentos-compra/convertir/${item.id}`, { nuevo_tipo: 'compra' }, {
+    await axios.post(`/api/v1/transacciones/convertir/${item.id}`, { nuevo_tipo: 'compra' }, {
       headers: { Authorization: `Bearer ${token}` }
     })
     snackbar.value = { show: true, text: 'Orden convertida a compra exitosamente', color: 'success' }

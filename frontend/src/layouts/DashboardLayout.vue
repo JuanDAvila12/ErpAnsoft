@@ -57,14 +57,20 @@
           <v-list-item prepend-icon="mdi-account-group" title="Clientes" @click="irA('/dashboard/ventas/clientes')" />
         </v-list-group>
 
+        <!-- Entidades / Contactos -->
+        <v-list-item v-if="tienePermiso('compras.ver')" prepend-icon="mdi-account-multiple" title="Entidades (Clientes/Prov.)" color="primary" @click="irA('/dashboard/entidades')" />
+
         <!-- Compras -->
         <v-list-group v-if="tienePermiso('compras.ver')" value="compras">
           <template v-slot:activator="{ props }">
             <v-list-item v-bind="props" prepend-icon="mdi-truck-delivery" title="Compras" color="success" />
           </template>
+          <v-list-item prepend-icon="mdi-file-document-outline" title="Cotizaciones" @click="irA('/dashboard/compras/cotizaciones')" />
           <v-list-item prepend-icon="mdi-file-document" title="Órdenes de Compra" @click="irA('/dashboard/compras/ordenes')" />
+          <v-list-item prepend-icon="mdi-receipt" title="Compras (Facturas)" @click="irA('/dashboard/compras/compras')" />
           <v-list-item prepend-icon="mdi-package-down" title="Recepciones" @click="irA('/dashboard/compras/recepciones')" />
           <v-list-item prepend-icon="mdi-account" title="Proveedores" @click="irA('/dashboard/compras/proveedores')" />
+          <v-list-item prepend-icon="mdi-chart-bar" title="Reportes" @click="irA('/dashboard/compras/reportes')" />
         </v-list-group>
 
         <!-- Inventario -->
@@ -75,6 +81,9 @@
           <v-list-item prepend-icon="mdi-package" title="Artículos" @click="irA('/dashboard/inventario/articulos')" />
           <v-list-item prepend-icon="mdi-warehouse" title="Almacenes" @click="irA('/dashboard/inventario/almacenes')" />
           <v-list-item prepend-icon="mdi-transfer" title="Movimientos" @click="irA('/dashboard/inventario/movimientos')" />
+          <v-list-item prepend-icon="mdi-arrow-decision" title="Traspasos" @click="irA('/dashboard/inventario/traspasos')" />
+          <v-list-item prepend-icon="mdi-package-down" title="Recep. Traspaso" @click="irA('/dashboard/inventario/recepciones-traspaso')" />
+          <v-list-item prepend-icon="mdi-chart-box" title="Reportes" @click="irA('/dashboard/inventario/reportes')" />
           <v-list-item prepend-icon="mdi-qrcode" title="Series" @click="irA('/dashboard/inventario/series')" />
         </v-list-group>
 

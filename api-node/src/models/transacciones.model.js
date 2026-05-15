@@ -17,37 +17,45 @@ const TransaccionesModel = {
 
   /** Mapeo de tipo de transacción → código de folio */
   _tipoFolioMap: {
-    cotizacion:        'COT',
-    orden_venta:       'OV',
-    venta:             'FAC',
-    orden_compra:      'OC',
-    compra:            'COM',
-    ajuste_inventario: 'AJU',
-    entrada_inventario:'ENT',
-    salida_inventario: 'SAL',
-    pago:              'PAG',
-    cobro:             'COB',
+    cotizacion:         'COT',
+    orden_venta:        'OV',
+    venta:              'FAC',
+    orden_compra:       'OC',
+    compra:             'COM',
+    cotizacion_compra:  'COTC',
+    recepcion_compra:   'RECC',
+    traspaso:           'TRAS',
+    recepcion_traspaso: 'RECT',
+    ajuste_inventario:  'AJU',
+    entrada_inventario: 'ENT',
+    salida_inventario:  'SAL',
+    pago:               'PAG',
+    cobro:              'COB',
   },
 
   /** Mapeo de tipo de transacción → tipo de serie de documento */
   _tipoSerieMap: {
-    cotizacion:        'cotizacion',
-    orden_venta:       'orden_venta',
-    venta:             'venta',
-    orden_compra:      'orden_compra',
-    compra:            'compra',
-    ajuste_inventario: 'ajuste',
-    entrada_inventario:'entrada',
-    salida_inventario: 'salida',
-    pago:              'pago',
-    cobro:             'cobro',
+    cotizacion:         'cotizacion',
+    orden_venta:        'orden_venta',
+    venta:              'venta',
+    orden_compra:       'orden_compra',
+    compra:             'compra',
+    cotizacion_compra:  'cotizacion_compra',
+    recepcion_compra:   'recepcion_compra',
+    traspaso:           'traspaso',
+    recepcion_traspaso: 'recepcion_traspaso',
+    ajuste_inventario:  'ajuste',
+    entrada_inventario: 'entrada',
+    salida_inventario:  'salida',
+    pago:               'pago',
+    cobro:              'cobro',
   },
 
   /** Tipos que afectan inventario (salida) */
-  _tiposSalida: new Set(['venta', 'salida_inventario']),
+  _tiposSalida: new Set(['venta', 'salida_inventario', 'traspaso']),
 
   /** Tipos que afectan inventario (entrada) */
-  _tiposEntrada: new Set(['compra', 'entrada_inventario']),
+  _tiposEntrada: new Set(['compra', 'entrada_inventario', 'recepcion_compra', 'recepcion_traspaso']),
 
   /** Tipos que generan asientos contables automáticos */
   _tiposContables: new Set(['venta', 'compra', 'pago', 'cobro']),
@@ -96,7 +104,7 @@ const TransaccionesModel = {
    * @returns {'entrada'|'salida'|'ninguno'}
    */
   _getTipoMovimiento(tipo, cantidad) {
-    if (tipo === 'orden_venta' || tipo === 'orden_compra' || tipo === 'cotizacion') {
+    if (tipo === 'orden_venta' || tipo === 'orden_compra' || tipo === 'cotizacion' || tipo === 'cotizacion_compra') {
       return 'ninguno';
     }
     if (tipo === 'ajuste_inventario') {
@@ -132,6 +140,8 @@ const TransaccionesModel = {
       entidad_proveedor_id,
       entidad_vendedor_id,
       almacen_id,
+      almacen_destino_id,
+      documento_origen_id,
       metodo_pago,
       forma_pago_id,
       terminos_pago_id,
@@ -257,13 +267,14 @@ const TransaccionesModel = {
          (tipo, estado, folio, total, moneda_id,
           entidad_cliente_id, entidad_proveedor_id, entidad_vendedor_id,
           almacen_id, metodo_pago, forma_pago_id, terminos_pago_id,
-          serie_id, fecha_vencimiento, comentario)
-         VALUES ($1, 'confirmado', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          serie_id, fecha_vencimiento, comentario, documento_origen_id)
+         VALUES ($1, 'confirmado', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          RETURNING *`,
         [tipo, folio, total, moneda_id || 1,
          entidad_cliente_id || null, entidad_proveedor_id || null, entidad_vendedor_id || null,
          almacen_id || null, metodo_pago || 'efectivo', forma_pago_id || null,
-         terminos_pago_id || null, serie, fecha_vencimiento || null, comentario || null]
+         terminos_pago_id || null, serie, fecha_vencimiento || null, comentario || null,
+         documento_origen_id || null]
       );
       const transaccion = insertResult.rows[0];
 
@@ -285,9 +296,11 @@ const TransaccionesModel = {
         );
         const detalle = detResult.rows[0];
 
-        // Registrar movimiento en inventario_movimientos (para compatibilidad con consultas de stock)
+        // Registrar movimiento en inventario_movimientos
         if (this._afectaInventario(tipo) && det.tipo_movimiento !== 'ninguno') {
           const cantidadMov = (det.tipo_movimiento === 'salida') ? -det.cantidad : det.cantidad;
+
+          // Movimiento principal (salida desde almacén origen)
           await client.query(
             `INSERT INTO inventario_movimientos
              (articulo_id, cantidad, tipo_movimiento, almacen_id,
@@ -296,6 +309,18 @@ const TransaccionesModel = {
             [det.articulo_id, Math.abs(cantidadMov), det.tipo_movimiento, almacenId,
              transaccion.id, detalle.id]
           );
+
+          // Para traspasos: insertar movimiento de ENTRADA en el almacén destino
+          if (tipo === 'traspaso' && almacen_destino_id) {
+            await client.query(
+              `INSERT INTO inventario_movimientos
+               (articulo_id, cantidad, tipo_movimiento, almacen_id,
+                referencia_tipo, referencia_id, documento_detalle_tipo, documento_detalle_id)
+               VALUES ($1, $2, 'entrada', $3, 'transaccion', $4, 'transacciones_detalle', $5)`,
+              [det.articulo_id, Math.abs(cantidadMov), almacen_destino_id,
+               transaccion.id, detalle.id]
+            );
+          }
 
           // Actualizar costo_promedio en compras (promedio ponderado)
           if (tipo === 'compra') {
@@ -568,9 +593,10 @@ const TransaccionesModel = {
 
       // Validar conversión lógica
       const conversionesPermitidas = {
-        cotizacion:  ['orden_venta', 'venta'],
-        orden_venta: ['venta'],
-        orden_compra:['compra'],
+        cotizacion:        ['orden_venta', 'venta'],
+        orden_venta:       ['venta'],
+        orden_compra:      ['compra'],
+        cotizacion_compra: ['orden_compra', 'compra'],
       };
       const permitidos = conversionesPermitidas[docOrigen.tipo] || [];
       if (!permitidos.includes(nuevoTipo)) {

@@ -343,7 +343,7 @@ async function cargarDocumento() {
   loadingDetalle.value = true
   try {
     const token = localStorage.getItem('token')
-    const res = await axios.get(`/api/v1/documentos-compra/${id}`, {
+    const res = await axios.get(`/api/v1/transacciones/${id}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     documento.value = res.data
@@ -380,7 +380,7 @@ async function convertirACompra() {
   try {
     const token = localStorage.getItem('token')
     await axios.post(
-      `/api/v1/documentos-compra/convertir/${documento.value.id}`,
+      `/api/v1/transacciones/convertir/${documento.value.id}`,
       { nuevo_tipo: 'compra' },
       { headers: { Authorization: `Bearer ${token}` } }
     )
@@ -405,7 +405,7 @@ async function ejecutarCancelacion() {
   try {
     const token = localStorage.getItem('token')
     await axios.post(
-      `/api/v1/documentos-compra/${documento.value.id}/cancelar`,
+      `/api/v1/transacciones/${documento.value.id}/cancelar`,
       {},
       { headers: { Authorization: `Bearer ${token}` } }
     )

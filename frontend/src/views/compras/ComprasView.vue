@@ -404,11 +404,11 @@ async function cargarDatos() {
     if (filtros.value.estado) params.estado = filtros.value.estado
     if (filtros.value.proveedor) params.proveedor = filtros.value.proveedor
 
-    const res = await axios.get('/api/v1/documentos-compra', {
+    const res = await axios.get('/api/v1/transacciones', {
       headers: { Authorization: `Bearer ${token}` },
       params,
     })
-    documentos.value = res.data || []
+    documentos.value = res.data?.datos || res.data || []
   } catch (err) {
     console.error('Error al cargar compras:', err)
     snackbar.value = { show: true, text: 'Error al cargar compras', color: 'error' }
@@ -459,7 +459,7 @@ async function guardarNuevo() {
       })),
     }
 
-    await axios.post('/api/v1/documentos-compra', payload, {
+    await axios.post('/api/v1/transacciones', payload, {
       headers: { Authorization: `Bearer ${token}` }
     })
 
@@ -488,7 +488,7 @@ async function cancelarDocumento() {
   cancelando.value = true
   try {
     const token = localStorage.getItem('token')
-    await axios.post(`/api/v1/documentos-compra/${documentoACancelar.value.id}/cancelar`, {}, {
+    await axios.post(`/api/v1/transacciones/${documentoACancelar.value.id}/cancelar`, {}, {
       headers: { Authorization: `Bearer ${token}` }
     })
     dialogoCancelar.value = false

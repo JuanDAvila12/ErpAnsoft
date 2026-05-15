@@ -109,6 +109,7 @@ router.post('/', authMiddleware, async (req, res) => {
       'orden_compra', 'compra',
       'ajuste_inventario', 'entrada_inventario', 'salida_inventario',
       'pago', 'cobro',
+      'cotizacion_compra', 'recepcion_compra', 'traspaso', 'recepcion_traspaso',
     ];
     if (!tipo || !tiposValidos.includes(tipo)) {
       return res.status(400).json({

@@ -3,22 +3,26 @@
     <v-row class="mb-4">
       <v-col cols="12" md="8">
         <div class="d-flex align-center">
-          <v-icon size="36" color="success" class="mr-3">mdi-package-down</v-icon>
+          <v-icon size="36" color="success" class="mr-3">mdi-file-document-outline</v-icon>
           <div>
-            <h2 class="text-h5 font-weight-bold mb-0">Recepciones de Compra</h2>
-            <p class="text-body-2 text-medium-emphasis mt-0 mb-0">Registro de entrada física de mercancía</p>
+            <h2 class="text-h5 font-weight-bold mb-0">Cotizaciones de Compra</h2>
+            <p class="text-body-2 text-medium-emphasis mt-0 mb-0">Solicitudes de cotización a proveedores</p>
           </div>
         </div>
       </v-col>
       <v-col cols="12" md="4" class="text-right d-flex align-center justify-end">
-        <v-btn color="success" variant="elevated" prepend-icon="mdi-plus-circle" @click="abrirDialogoNuevo()">Nueva Recepción</v-btn>
+        <v-btn color="success" variant="elevated" prepend-icon="mdi-plus-circle" @click="abrirDialogoNuevo()">
+          Nueva Cotización
+        </v-btn>
       </v-col>
     </v-row>
 
     <v-card class="mb-4" variant="outlined">
       <v-card-text>
         <v-row align="center">
-          <v-col cols="12" sm="4" md="3"><v-text-field v-model="filtros.estado" label="Estado" placeholder="confirmado..." variant="outlined" density="compact" hide-details /></v-col>
+          <v-col cols="12" sm="4" md="3">
+            <v-text-field v-model="filtros.estado" label="Estado" placeholder="confirmado, cancelado..." variant="outlined" density="compact" hide-details />
+          </v-col>
           <v-col cols="12" sm="4" md="3">
             <v-btn variant="outlined" prepend-icon="mdi-filter" @click="cargarDatos()" class="mr-2">Filtrar</v-btn>
             <v-btn variant="text" prepend-icon="mdi-refresh" @click="limpiarFiltros()">Limpiar</v-btn>
@@ -28,7 +32,7 @@
     </v-card>
 
     <v-card variant="outlined">
-      <v-data-table :headers="columnas" :items="documentos" :loading="loading" loading-text="Cargando recepciones..." :items-per-page="20" class="elevation-0" @click:row="irADetalle">
+      <v-data-table :headers="columnas" :items="documentos" :loading="loading" loading-text="Cargando cotizaciones..." :items-per-page="20" class="elevation-0" @click:row="irADetalle">
         <template v-slot:item.folio="{ item }"><strong>{{ item.folio }}</strong></template>
         <template v-slot:item.proveedor_nombre="{ item }">{{ item.proveedor_nombre || '—' }}</template>
         <template v-slot:item.total="{ item }">${{ Number(item.total).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</template>
@@ -38,14 +42,15 @@
         </template>
         <template v-slot:item.acciones="{ item }">
           <v-btn icon size="small" variant="text" color="primary" @click.stop="irADetalle(item)"><v-icon>mdi-eye</v-icon><v-tooltip activator="parent" location="bottom">Ver</v-tooltip></v-btn>
+          <v-btn v-if="item.estado === 'confirmado'" icon size="small" variant="text" color="success" @click.stop="convertirAOrden(item)"><v-icon>mdi-arrow-decision</v-icon><v-tooltip activator="parent" location="bottom">Convertir a Orden</v-tooltip></v-btn>
         </template>
       </v-data-table>
     </v-card>
 
-    <!-- Diálogo Nueva Recepción -->
+    <!-- Diálogo Nueva Cotización -->
     <v-dialog v-model="dialogoNuevo" max-width="800px" persistent scrollable>
       <v-card>
-        <v-card-title class="text-h5 bg-success text-white pa-4"><v-icon class="mr-2">mdi-plus-circle</v-icon>Nueva Recepción de Compra</v-card-title>
+        <v-card-title class="text-h5 bg-success text-white pa-4"><v-icon class="mr-2">mdi-plus-circle</v-icon>Nueva Cotización de Compra</v-card-title>
         <v-card-text class="pa-4">
           <v-form ref="formNuevo">
             <v-row>
@@ -54,21 +59,24 @@
                   <template v-slot:item="{ props, item }"><v-list-item v-bind="props" :subtitle="item.raw.rfc" /></template>
                 </v-autocomplete>
               </v-col>
-              <v-col cols="12" md="6">
-                <v-select v-model="nuevoDocumento.almacen_id" :items="almacenes" item-title="nombre" item-value="id" label="Almacén *" variant="outlined" density="compact" clearable />
-              </v-col>
             </v-row>
             <v-divider class="my-3" />
-            <h4 class="text-subtitle-1 font-weight-bold mb-2">Artículos Recibidos</h4>
+            <h4 class="text-subtitle-1 font-weight-bold mb-2">Artículos</h4>
             <v-row v-for="(art, idx) in nuevoDocumento.articulos" :key="idx" class="mb-2" align="center">
               <v-col cols="5">
                 <v-autocomplete v-model="art.articulo_id" :items="articulos" item-title="nombre" item-value="id" label="Artículo *" variant="outlined" density="compact" :loading="buscandoArticulos" @update:search="buscarArticulos" hide-details clearable>
-                  <template v-slot:item="{ props, item }"><v-list-item v-bind="props" :subtitle="`SKU: ${item.raw.sku} | Costo: $${Number(item.raw.costo_promedio).toFixed(2)}`" /></template>
+                  <template v-slot:item="{ props, item }"><v-list-item v-bind="props" :subtitle="`SKU: ${item.raw.sku} | $${Number(item.raw.precio_venta).toFixed(2)}`" /></template>
                 </v-autocomplete>
               </v-col>
-              <v-col cols="2"><v-text-field v-model.number="art.cantidad" label="Cant." type="number" variant="outlined" density="compact" min="0" step="0.01" hide-details /></v-col>
-              <v-col cols="3"><v-text-field v-model.number="art.precio_unitario" label="Costo Unit." type="number" variant="outlined" density="compact" min="0" step="0.01" hide-details suffix="$" /></v-col>
-              <v-col cols="1" class="text-center"><v-btn icon size="small" color="error" variant="text" @click="eliminarArticulo(idx)"><v-icon>mdi-close-circle</v-icon></v-btn></v-col>
+              <v-col cols="2">
+                <v-text-field v-model.number="art.cantidad" label="Cant." type="number" variant="outlined" density="compact" min="0" step="0.01" hide-details />
+              </v-col>
+              <v-col cols="3">
+                <v-text-field v-model.number="art.precio_unitario" label="Precio Unit." type="number" variant="outlined" density="compact" min="0" step="0.01" hide-details suffix="$" />
+              </v-col>
+              <v-col cols="1" class="text-center">
+                <v-btn icon size="small" color="error" variant="text" @click="eliminarArticulo(idx)"><v-icon>mdi-close-circle</v-icon></v-btn>
+              </v-col>
             </v-row>
             <v-btn variant="outlined" size="small" prepend-icon="mdi-plus" @click="agregarArticulo" class="mt-2">Agregar Artículo</v-btn>
             <v-divider class="my-3" />
@@ -78,8 +86,9 @@
           </v-form>
         </v-card-text>
         <v-card-actions class="pa-4 pt-0">
-          <v-spacer /><v-btn variant="outlined" @click="dialogoNuevo = false">Cancelar</v-btn>
-          <v-btn color="success" prepend-icon="mdi-content-save" :loading="guardando" @click="guardarNuevo">Registrar Recepción</v-btn>
+          <v-spacer />
+          <v-btn variant="outlined" @click="dialogoNuevo = false">Cancelar</v-btn>
+          <v-btn color="success" prepend-icon="mdi-content-save" :loading="guardando" @click="guardarNuevo">Guardar Cotización</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -101,7 +110,6 @@ const loading = ref(false)
 const guardando = ref(false)
 const documentos = ref([])
 const proveedores = ref([])
-const almacenes = ref([])
 const articulos = ref([])
 const buscandoProveedores = ref(false)
 const buscandoArticulos = ref(false)
@@ -116,17 +124,17 @@ const columnas = [
   { title: 'Fecha', key: 'fecha', sortable: true },
   { title: 'Total', key: 'total', sortable: true, align: 'end' },
   { title: 'Estado', key: 'estado', sortable: true },
-  { title: 'Acciones', key: 'acciones', sortable: false, align: 'center', width: '80px' },
+  { title: 'Acciones', key: 'acciones', sortable: false, align: 'center', width: '120px' },
 ]
 
 const nuevoDocumento = ref({
   entidad_proveedor_id: null,
-  almacen_id: null,
   articulos: [{ articulo_id: null, cantidad: 1, precio_unitario: null }],
 })
 
 function agregarArticulo() { nuevoDocumento.value.articulos.push({ articulo_id: null, cantidad: 1, precio_unitario: null }) }
 function eliminarArticulo(idx) { if (nuevoDocumento.value.articulos.length > 1) nuevoDocumento.value.articulos.splice(idx, 1) }
+
 function calcularTotal() {
   let total = 0
   for (const art of nuevoDocumento.value.articulos) {
@@ -140,7 +148,9 @@ async function buscarProveedores(query) {
   buscandoProveedores.value = true
   try {
     const token = localStorage.getItem('token')
-    const res = await axios.get(`/api/v1/entidades?rol=proveedor&search=${encodeURIComponent(query)}`, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await axios.get(`/api/v1/entidades?rol=proveedor&search=${encodeURIComponent(query)}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
     proveedores.value = res.data?.datos || res.data || []
   } catch (err) { console.error(err) }
   finally { buscandoProveedores.value = false }
@@ -151,7 +161,9 @@ async function buscarArticulos(query) {
   buscandoArticulos.value = true
   try {
     const token = localStorage.getItem('token')
-    const res = await axios.get(`/api/v1/articulos?search=${encodeURIComponent(query)}&limite=20`, { headers: { Authorization: `Bearer ${token}` } })
+    const res = await axios.get(`/api/v1/articulos?search=${encodeURIComponent(query)}&limite=20`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
     articulos.value = res.data?.datos || res.data || []
   } catch (err) { console.error(err) }
   finally { buscandoArticulos.value = false }
@@ -161,49 +173,61 @@ async function cargarDatos() {
   loading.value = true
   try {
     const token = localStorage.getItem('token')
-    const params = { tipo: 'recepcion_compra' }
+    const params = { tipo: 'cotizacion_compra' }
     if (filtros.value.estado) params.estado = filtros.value.estado
     const res = await axios.get('/api/v1/transacciones', { headers: { Authorization: `Bearer ${token}` }, params })
     documentos.value = res.data?.datos || res.data || []
-  } catch (err) { console.error(err); snackbar.value = { show: true, text: 'Error al cargar', color: 'error' } }
-  finally { loading.value = false }
+  } catch (err) {
+    console.error(err)
+    snackbar.value = { show: true, text: 'Error al cargar cotizaciones', color: 'error' }
+  } finally { loading.value = false }
 }
 
 function limpiarFiltros() { filtros.value = { estado: '' }; cargarDatos() }
 
 function abrirDialogoNuevo() {
-  nuevoDocumento.value = { entidad_proveedor_id: null, almacen_id: null, articulos: [{ articulo_id: null, cantidad: 1, precio_unitario: null }] }
+  nuevoDocumento.value = { entidad_proveedor_id: null, articulos: [{ articulo_id: null, cantidad: 1, precio_unitario: null }] }
   dialogoNuevo.value = true
 }
 
 async function guardarNuevo() {
-  if (!nuevoDocumento.value.entidad_proveedor_id) { snackbar.value = { show: true, text: 'Seleccione un proveedor', color: 'warning' }; return }
-  if (!nuevoDocumento.value.articulos.length || !nuevoDocumento.value.articulos[0].articulo_id) { snackbar.value = { show: true, text: 'Agregue al menos un artículo', color: 'warning' }; return }
+  if (!nuevoDocumento.value.entidad_proveedor_id) {
+    snackbar.value = { show: true, text: 'Seleccione un proveedor', color: 'warning' }; return
+  }
+  if (!nuevoDocumento.value.articulos.length || !nuevoDocumento.value.articulos[0].articulo_id) {
+    snackbar.value = { show: true, text: 'Agregue al menos un artículo', color: 'warning' }; return
+  }
   guardando.value = true
   try {
     const token = localStorage.getItem('token')
-    await axios.post('/api/v1/transacciones', {
-      tipo: 'recepcion_compra',
+    const payload = {
+      tipo: 'cotizacion_compra',
       entidad_proveedor_id: nuevoDocumento.value.entidad_proveedor_id,
-      almacen_id: nuevoDocumento.value.almacen_id,
       articulos: nuevoDocumento.value.articulos.map(a => ({ articulo_id: a.articulo_id, cantidad: a.cantidad, precio_unitario: a.precio_unitario })),
-    }, { headers: { Authorization: `Bearer ${token}` } })
+    }
+    await axios.post('/api/v1/transacciones', payload, { headers: { Authorization: `Bearer ${token}` } })
     dialogoNuevo.value = false
-    snackbar.value = { show: true, text: 'Recepción registrada exitosamente', color: 'success' }
+    snackbar.value = { show: true, text: 'Cotización creada exitosamente', color: 'success' }
     await cargarDatos()
-  } catch (err) { console.error(err); snackbar.value = { show: true, text: err.response?.data?.error || 'Error', color: 'error' } }
-  finally { guardando.value = false }
+  } catch (err) {
+    console.error(err)
+    snackbar.value = { show: true, text: err.response?.data?.error || 'Error al crear cotización', color: 'error' }
+  } finally { guardando.value = false }
 }
 
 function irADetalle(item) { router.push(`/dashboard/compras/${item.id}`) }
 
-async function cargarCatalogos() {
+async function convertirAOrden(item) {
   try {
     const token = localStorage.getItem('token')
-    const res = await axios.get('/api/v1/inventario/almacenes', { headers: { Authorization: `Bearer ${token}` } })
-    almacenes.value = res.data?.datos || res.data || []
-  } catch (err) { console.error(err) }
+    await axios.post(`/api/v1/transacciones/${item.id}/convertir`, { nuevo_tipo: 'orden_compra' }, { headers: { Authorization: `Bearer ${token}` } })
+    snackbar.value = { show: true, text: 'Cotización convertida a orden de compra', color: 'success' }
+    await cargarDatos()
+  } catch (err) {
+    console.error(err)
+    snackbar.value = { show: true, text: err.response?.data?.error || 'Error al convertir', color: 'error' }
+  }
 }
 
-onMounted(() => { cargarDatos(); cargarCatalogos() })
+onMounted(() => cargarDatos())
 </script>

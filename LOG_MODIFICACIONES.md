@@ -129,6 +129,58 @@
 ### Configuración:
 - Se generó commit: "feat: landing page Odoo-like, portal clientes, RBAC y POS"
 
+## 0010 - Módulo de Ventas completo con trazabilidad y chatter de auditoría
+- Modelo `documentosVenta.model.js` con métodos: crearDocumento, convertirDocumento, cancelar, findAll, findById
+- Rutas `documentosVenta.routes.js` con endpoints: GET, GET /:id, GET /:id/historial, POST, POST /convertir/:origenId, POST /:id/cancelar
+- Vistas Vue 3/Vuetify: CotizacionesView, OrdenesView, FacturasView con tablas, filtros, diálogos de creación y acciones
+- Vista de detalle DocumentoVentaDetalle con trazabilidad origen/destino y panel CHATTER con v-timeline
+- Endpoint de historial que consulta log_modificaciones_cabecera y log_modificaciones_detalle.
+- Trazabilidad completa entre cotización → orden de venta → factura/venta con transacciones ACID.
+
+## 0011 - Sistema de facturación electrónica CFDI 4.0 completo
+- Generación de XML CFDI 4.0 desde api-python con catálogos SAT
+- Endpoint POST /api/v1/fiscal/timbrar/{documento_venta_id}
+- Consulta de comprobantes fiscales con UUID, XML, estado
+- Vistas frontend: CFDIView, TimbradoView, CancelacionesView con VDataTable y acciones
+- Panel de historial (CHATTER) para CFDI
+- Integración con documentos de venta: actualiza estado a facturado y vincula comprobante
+
+## 0012 - Módulo de Compras completo con flujo de etapas, trazabilidad y chatter de auditoría
+### Node.js (api-node/):
+- **src/models/documentosCompra.model.js** (actualizado): 
+  - `crearDocumento(tipo, datos, req)`: Valida proveedor con rol 'proveedor', obtiene serie por defecto, genera folio atómico con `obtener_folio('OC'/'COM')`, calcula total, inserta en documentos_compra con estado 'confirmado', inserta líneas en documentos_compra_detalle, genera movimientos de inventario de entrada para tipo 'compra', actualiza costo_promedio con promedio ponderado simple. Transacción BEGIN/COMMIT/ROLLBACK con setAuditContext.
+  - `convertirDocumento(origenId, nuevoTipo, req)`: Toma documento origen (orden_compra), crea compra con los mismos detalles, establece documento_origen_id, genera movimientos de entrada y actualiza costo_promedio.
+  - `cancelar(id, req)`: Si es compra, revierte inventario con movimiento de salida. Cambia estado a 'cancelado'.
+  - `findAll(filtros)`: Con JOINs a entidades y series, filtros por tipo/estado/proveedor.
+  - `findById(id)`: Con JOINs, subconsultas para origen y destino (trazabilidad).
+- **src/routes/documentosCompra.routes.js** (actualizado):
+  - GET / → listar con filtros
+  - GET /:id → detalle con origen/destino
+  - GET /:id/historial → auditoría desde log_modificaciones_cabecera/detalle
+  - POST / → crear documento (orden_compra o compra)
+  - POST /convertir/:origenId → convertir orden_compra → compra
+  - POST /:id/cancelar → cancelar con reversión de inventario
+  - Todas protegidas con authMiddleware
+
+### Frontend (frontend/):
+- **src/views/compras/OrdenesCompraView.vue**: Listado de órdenes de compra con v-data-table, filtros, diálogo de creación con autocomplete de proveedores/artículos, acciones de convertir a compra y cancelar. Iconos: mdi-plus-circle, mdi-content-save, mdi-cancel, mdi-arrow-decision.
+- **src/views/compras/ComprasView.vue**: Listado de compras con columna de origen, diálogo de creación directa de compra con entrada de inventario.
+- **src/views/compras/DocumentoCompraDetalle.vue**: Vista de detalle con cabecera, líneas, trazabilidad origen/destino con enlaces, panel CHATTER con v-timeline mostrando historial de auditoría (tipo_operación I/U/D, usuario, fecha, campos modificados).
+- **src/router/index.js**: Agregadas rutas /dashboard/compras/compras, /dashboard/compras/:id
+
+### Trazabilidad:
+- `convertirDocumento` establece correctamente `documento_origen_id` en el nuevo documento
+- `findById` incluye subconsultas para origen (documento que lo originó) y destino (documento creado a partir de éste)
+- Vistas muestran alerts con enlaces navegables: "Proviene de [Tipo] [Folio]" y "Convertido a [Tipo] [Folio]"
+
+### Iconografía:
+- Crear nuevo: mdi-plus-circle
+- Editar: mdi-pencil
+- Guardar: mdi-content-save
+- Cancelar: mdi-cancel
+- Convertir: mdi-arrow-decision
+- Ver historial: mdi-history
+
 ## 0013 - Modelo unificado TransaccionesModel y rutas /api/v1/transacciones
 ### SQL (db/migration_v4_unificacion.sql):
 - Creación de tablas unificadas: transacciones, transacciones_detalle, transacciones_series, transacciones_contables y cuentas_contables
@@ -150,3 +202,42 @@
 - `src/routes/documentosVenta.routes.js`: Reescrito como wrapper que redirige todo a TransaccionesModel con mapeo de campos
 - `src/routes/documentosCompra.routes.js`: Reescrito como wrapper que redirige todo a TransaccionesModel con mapeo de campos
 - Los endpoints antiguos (/api/v1/documentos-venta, /api/v1/documentos-compra) siguen funcionando sin cambios en el frontend
+
+## 0014 - Expansión Compras (flujo completo), Inventarios, Catálogos funcionales y Reportes
+### SQL (db/migration_v5_expansion.sql):
+- Nuevos tipos de transacción: 'cotizacion_compra', 'recepcion_compra', 'traspaso', 'recepcion_traspaso'
+- Nuevos folios en control_folios: COTC, RECC, TRAS, RECT
+- Nuevas series en series_documentos para los 4 nuevos tipos
+- Ampliación del CHECK de tipo en transacciones
+
+### Node.js (api-node/):
+- `src/models/transacciones.model.js`: Lógica para traspaso (movimiento dual salida/entrada sin contabilidad), recepcion_traspaso (confirmación de entrada), recepcion_compra (entrada inventario sin contabilidad)
+- `src/models/reportes.model.js`: Nuevo modelo con métodos reportesComprasPorArticulo, reportesComprasPorProveedor, stockActual, movimientosInventario, trazabilidadSerie
+- `src/routes/reportes.routes.js`: GET /api/v1/reportes/compras... (2 endpoints)
+- `src/routes/inventario.routes.js`: GET /api/v1/inventario/stock, /movimientos, /serie/:numero_serie
+- `api-node/index.js`: Registro de nuevas rutas de reportes e inventario
+- Actualización de transacciones.routes.js para incluir nuevos tipos en validaciones
+- Migración de endpoints antiguos (documentos-compra) a /api/v1/transacciones en frontend
+
+### Frontend - Catálogos maestros funcionales:
+- Entidades (Clientes/Proveedores): Vista funcional con CRUD, multi-roles, v-data-table y diálogos
+- Artículos: Vista funcional con SKU, precios, categorías, marcas, unidades, usa_serie, código barras
+- Almacenes: Vista funcional con nombre, ubicación, activo, diálogo CRUD
+
+### Frontend - Módulo de Compras completo:
+- Cotizaciones de Compra (tipo='cotizacion_compra'): Tabla, diálogo nueva, selección de proveedor/artículos
+- Órdenes de Compra (tipo='orden_compra'): Convertir desde cotización, tabla con filtros
+- Compras (tipo='compra'): Directa o convertida desde orden, con entrada a inventario
+- Recepciones de Compra (tipo='recepcion_compra'): Registro de entrada física vinculada a orden/compra
+- Detalle genérico de transacción: Cabecera, líneas, trazabilidad origen/destino, panel historial (chatter)
+
+### Frontend - Módulo de Inventarios profesional:
+- Traspasos entre Almacenes (tipo='traspaso'): Movimiento dual salida/entrada, selección almacén origen/destino
+- Recepciones de Traspaso (tipo='recepcion_traspaso'): Confirmación de entrada en almacén destino
+- Reportes de Inventario: Stock actual, movimientos por artículo/almacén con filtros de fecha
+- Consulta por Número de Serie: Búsqueda y trazabilidad completa del ciclo de vida de una serie
+
+### Frontend - Integración y Menú:
+- DashboardLayout.vue actualizado con nuevas rutas en menú lateral
+- Vue Router con todas las nuevas rutas protegidas
+- Flujos completos: Cotización → Orden → Recepción → Compra (factura)

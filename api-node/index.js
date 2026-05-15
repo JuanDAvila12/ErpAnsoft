@@ -31,6 +31,7 @@ const articulosSeriesRoutes = require('./src/routes/articulosSeries.routes');
 const comprobantesFiscalesRoutes = require('./src/routes/comprobantesFiscales.routes');
 const permisosRoutes = require('./src/routes/permisos.routes');
 const transaccionesRoutes = require('./src/routes/transacciones.routes');
+const reportesRoutes = require('./src/routes/reportes.routes');
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/inventario', inventarioRoutes);
@@ -46,6 +47,8 @@ app.use('/api/v1/articulos-series', articulosSeriesRoutes);
 app.use('/api/v1/comprobantes-fiscales', comprobantesFiscalesRoutes);
 app.use('/api/v1/permisos', permisosRoutes);
 app.use('/api/v1/transacciones', transaccionesRoutes);
+app.use('/api/v1/reportes', reportesRoutes);
+
 
 /**
  * GET /api/v1/articulos?search=

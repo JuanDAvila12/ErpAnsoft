@@ -18,16 +18,24 @@ import FacturasView from '../views/ventas/FacturasView.vue'
 import ClientesView from '../views/ventas/ClientesView.vue'
 
 // Compras
+import CotizacionesCompraView from '../views/compras/CotizacionesCompraView.vue'
 import OrdenesCompraView from '../views/compras/OrdenesCompraView.vue'
 import ComprasView from '../views/compras/ComprasView.vue'
 import RecepcionesView from '../views/compras/RecepcionesView.vue'
 import ProveedoresView from '../views/compras/ProveedoresView.vue'
 import DocumentoCompraDetalle from '../views/compras/DocumentoCompraDetalle.vue'
+import ComprasReportesView from '../views/compras/ComprasReportesView.vue'
+
+// Entidades
+import EntidadesView from '../views/compras/EntidadesView.vue'
 
 // Inventario
 import ArticulosView from '../views/inventario/ArticulosView.vue'
 import AlmacenesView from '../views/inventario/AlmacenesView.vue'
 import MovimientosView from '../views/inventario/MovimientosView.vue'
+import TraspasosView from '../views/inventario/TraspasosView.vue'
+import RecepcionesTraspasoView from '../views/inventario/RecepcionesTraspasoView.vue'
+import ReportesInventarioView from '../views/inventario/ReportesView.vue'
 import SeriesView from '../views/inventario/SeriesView.vue'
 
 // Contabilidad
@@ -113,6 +121,12 @@ const routes = [
       },
       // Compras
       {
+        path: 'compras/cotizaciones',
+        name: 'CotizacionesCompra',
+        component: CotizacionesCompraView,
+        meta: { requierePermiso: 'compras.ver' },
+      },
+      {
         path: 'compras/ordenes',
         name: 'OrdenesCompra',
         component: OrdenesCompraView,
@@ -142,6 +156,19 @@ const routes = [
         component: ProveedoresView,
         meta: { requierePermiso: 'compras.ver' },
       },
+      {
+        path: 'compras/reportes',
+        name: 'ComprasReportes',
+        component: ComprasReportesView,
+        meta: { requierePermiso: 'compras.ver' },
+      },
+      // Entidades
+      {
+        path: 'entidades',
+        name: 'Entidades',
+        component: EntidadesView,
+        meta: { requierePermiso: 'compras.ver' },
+      },
       // Inventario
       {
         path: 'inventario/articulos',
@@ -159,6 +186,24 @@ const routes = [
         path: 'inventario/movimientos',
         name: 'MovimientosInventario',
         component: MovimientosView,
+        meta: { requierePermiso: 'inventario.ver' },
+      },
+      {
+        path: 'inventario/traspasos',
+        name: 'Traspasos',
+        component: TraspasosView,
+        meta: { requierePermiso: 'inventario.ver' },
+      },
+      {
+        path: 'inventario/recepciones-traspaso',
+        name: 'RecepcionesTraspaso',
+        component: RecepcionesTraspasoView,
+        meta: { requierePermiso: 'inventario.ver' },
+      },
+      {
+        path: 'inventario/reportes',
+        name: 'ReportesInventario',
+        component: ReportesInventarioView,
         meta: { requierePermiso: 'inventario.ver' },
       },
       {
