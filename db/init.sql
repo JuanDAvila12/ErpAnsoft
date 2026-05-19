@@ -50,7 +50,7 @@ INSERT INTO impuestos (nombre, tasa, tipo) VALUES
     ('IVA 8% Fronterizo', 8.00, 'IVA'),
     ('IVA 0%', 0.00, 'IVA'),
     ('IEPS Gasolina', 5.00, 'IEPS')
-ON CONFLICT DO NOTHING;
+ON CONFLICT (nombre) DO NOTHING;
 
 -- Catálogo de formas de pago (claves SAT)
 CREATE TABLE IF NOT EXISTS formas_pago (
@@ -287,7 +287,7 @@ SELECT id, 'vendedor'::entidad_rol_enum FROM entidades WHERE rfc = 'XAXX01010100
 ON CONFLICT (entidad_id, rol) DO NOTHING;
 
 INSERT INTO usuarios (email, password_hash, nombre, rol_id, entidad_id, activo)
-SELECT 'admin@spierp.com', '$2a$10$Ag8fxS7Od4dODbqyfGRueu.J7.hGwKFYLKY2AwBoXbuFR063qCFru', 'Administrador', r.id, e.id, TRUE
+SELECT 'admin@spierp.com', '$2b$10$.Ohl2I89ziFbYbOUICNJHeFpPQcKMHqHFAaF7G1K65B5H4BNItWUS', 'Administrador', r.id, e.id, TRUE
 FROM roles r, entidades e
 WHERE r.nombre = 'admin' AND e.rfc = 'XAXX010101000'
 ON CONFLICT (email) DO NOTHING;

@@ -1,87 +1,79 @@
 <template>
   <v-container fluid>
     <v-row class="mb-4">
-      <v-col cols="12">
+      <v-col cols="12" md="8">
         <div class="d-flex align-center">
-          <v-icon size="36" color="warning" class="mr-3">mdi-qrcode-scan</v-icon>
+          <v-icon color="success" size="36" class="mr-3">mdi-qrcode</v-icon>
           <div>
-            <h2 class="text-h5 font-weight-bold mb-0">Consulta por Número de Serie</h2>
-            <p class="text-body-2 text-medium-emphasis mt-0 mb-0">Trazabilidad de artículos por número de serie</p>
+            <h2 class="text-h5 font-weight-bold mb-0">Trazabilidad por Serie</h2>
+            <p class="text-body-2 text-medium-emphasis mt-0 mb-0">Consulta de movimientos por número de serie</p>
           </div>
         </div>
       </v-col>
     </v-row>
 
-    <v-card variant="outlined" class="mb-4">
+    <v-card variant="outlined" class="pa-4 mb-4">
+      <v-row>
+        <v-col cols="12" sm="8">
+          <v-text-field v-model="numeroSerie" label="Buscar número de serie" variant="outlined" density="compact" @keyup.enter="buscar" clearable />
+        </v-col>
+        <v-col cols="12" sm="4">
+          <v-btn color="primary" @click="buscar" :loading="loading" block>Buscar</v-btn>
+        </v-col>
+      </v-row>
+    </v-card>
+
+    <!-- Loader -->
+    <div v-if="loading" class="text-center pa-8">
+      <v-progress-circular indeterminate color="success" size="48" width="4" />
+      <p class="text-body-1 text-medium-emphasis mt-4">Buscando serie...</p>
+    </div>
+
+    <!-- Error -->
+    <v-alert
+      v-else-if="errorMsg && !serieInfo"
+      type="error"
+      variant="tonal"
+      closable
+      class="mb-4"
+      @click:close="errorMsg = ''"
+    >
+      <template v-slot:title>Error</template>
+      {{ errorMsg }}
+    </v-alert>
+
+    <!-- Serie Info -->
+    <v-card v-if="serieInfo" class="mb-4" variant="tonal">
+      <v-card-title>Información de la Serie</v-card-title>
       <v-card-text>
-        <v-row align="center">
-          <v-col cols="12" sm="8" md="6">
-            <v-text-field
-              v-model="numeroSerie"
-              label="Número de Serie"
-              placeholder="Ingrese el número de serie a consultar"
-              variant="outlined"
-              density="compact"
-              hide-details
-              clearable
-              @keyup.enter="buscar"
-              :loading="buscando"
-            />
-          </v-col>
-          <v-col cols="12" sm="4" md="2">
-            <v-btn color="warning" variant="elevated" prepend-icon="mdi-magnify" @click="buscar" :loading="buscando" block>Buscar</v-btn>
+        <v-row>
+          <v-col cols="12" sm="4"><strong>Número:</strong> {{ serieInfo.numero_serie }}</v-col>
+          <v-col cols="12" sm="4"><strong>Artículo:</strong> {{ serieInfo.articulo_nombre }}</v-col>
+          <v-col cols="12" sm="4">
+            <strong>Estado:</strong>
+            <v-chip :color="serieInfo.estado === 'disponible' ? 'success' : 'warning'" size="small">{{ serieInfo.estado }}</v-chip>
           </v-col>
         </v-row>
       </v-card-text>
     </v-card>
 
-    <!-- Resultados -->
-    <template v-if="resultados.length > 0">
-      <!-- Información General -->
-      <v-card variant="outlined" class="mb-4">
-        <v-card-text>
-          <v-row>
-            <v-col cols="12" sm="6">
-              <p class="mb-1"><strong>No. Serie:</strong> {{ numeroSerie }}</p>
-              <p class="mb-1"><strong>Artículo:</strong> {{ resultados[0].articulo_nombre }} ({{ resultados[0].sku }})</p>
-              <p class="mb-0"><strong>Estado:</strong>
-                <v-chip :color="resultados[0].serie_estado === 'disponible' ? 'success' : 'error'" size="small" variant="tonal">
-                  {{ resultados[0].serie_estado }}
-                </v-chip>
-              </p>
-            </v-col>
-          </v-row>
-        </v-card-text>
-      </v-card>
-
-      <!-- Historial de Movimientos -->
-      <v-card variant="outlined">
-        <v-card-title class="text-subtitle-1 font-weight-bold">Historial de Movimientos</v-card-title>
-        <v-data-table :headers="columnas" :items="resultados" :items-per-page="20" class="elevation-0">
-          <template v-slot:item.transaccion_fecha="{ item }">{{ new Date(item.transaccion_fecha).toLocaleDateString('es-MX') }}</template>
-          <template v-slot:item.tipo_movimiento="{ item }">
-            <v-chip :color="item.tipo_movimiento === 'entrada' ? 'success' : 'error'" size="x-small" variant="tonal">{{ item.tipo_movimiento }}</v-chip>
-          </template>
-          <template v-slot:item.transaccion_folio="{ item }"><strong>{{ item.transaccion_folio }}</strong></template>
-          <template v-slot:item.transaccion_tipo="{ item }">{{ item.transaccion_tipo }}</template>
-          <template v-slot:item.entidad_nombre="{ item }">{{ item.entidad_nombre }}</template>
-          <template v-slot:item.almacen_nombre="{ item }">{{ item.almacen_nombre || '—' }}</template>
-        </v-data-table>
-      </v-card>
-    </template>
-
-    <!-- Sin resultados -->
-    <v-card v-else-if="buscado && !buscando" variant="outlined">
-      <v-card-text class="text-center pa-8">
-        <v-icon size="64" color="grey-lighten-1" class="mb-4">mdi-qrcode-scan</v-icon>
-        <h3 class="text-h6 text-medium-emphasis">No se encontraron resultados</h3>
-        <p class="text-body-2 text-medium-emphasis">El número de serie "{{ numeroSerie }}" no tiene registros en el sistema.</p>
-      </v-card-text>
+    <!-- Empty history -->
+    <v-card v-if="serieInfo && movimientos.length === 0" variant="outlined" class="text-center pa-8">
+      <v-icon size="48" color="grey-lighten-1" class="mb-2">mdi-history</v-icon>
+      <p class="text-body-2 text-medium-emphasis">No hay movimientos registrados para esta serie</p>
     </v-card>
 
-    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="3000">
-      {{ snackbar.text }}
-      <template v-slot:actions><v-btn variant="text" @click="snackbar.show = false">Cerrar</v-btn></template>
+    <!-- Movimientos -->
+    <v-data-table v-if="movimientos.length" :headers="headers" :items="movimientos" :items-per-page="15" class="elevation-1">
+      <template v-slot:item.fecha="{ item }">{{ new Date(item.fecha).toLocaleDateString('es-MX') }}</template>
+      <template v-slot:item.tipo="{ item }"><v-chip size="small">{{ item.tipo }}</v-chip></template>
+    </v-data-table>
+
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000">
+      {{ snackbar.mensaje }}
+      <template v-slot:actions>
+        <v-btn variant="text" @click="snackbar.show = false">Cerrar</v-btn>
+      </template>
     </v-snackbar>
   </v-container>
 </template>
@@ -90,44 +82,39 @@
 import { ref } from 'vue'
 import axios from 'axios'
 
+const loading = ref(false)
+const errorMsg = ref('')
 const numeroSerie = ref('')
-const buscando = ref(false)
-const buscado = ref(false)
-const resultados = ref([])
-const snackbar = ref({ show: false, text: '', color: 'success' })
+const serieInfo = ref(null)
+const movimientos = ref([])
+const snackbar = ref({ show: false, mensaje: '', color: 'success' })
 
-const columnas = [
-  { title: 'Fecha', key: 'transaccion_fecha', sortable: true },
-  { title: 'Tipo Mov.', key: 'tipo_movimiento', sortable: true },
-  { title: 'Folio', key: 'transaccion_folio', sortable: true },
-  { title: 'Tipo Trans.', key: 'transaccion_tipo', sortable: true },
-  { title: 'Entidad', key: 'entidad_nombre', sortable: true },
+const headers = [
+  { title: 'Fecha', key: 'fecha', sortable: true },
+  { title: 'Tipo', key: 'tipo', sortable: true },
+  { title: 'Documento', key: 'folio', sortable: true },
   { title: 'Almacén', key: 'almacen_nombre', sortable: true },
-  { title: 'Cantidad', key: 'cantidad', sortable: true, align: 'end' },
+  { title: 'Cantidad', key: 'cantidad', sortable: true },
 ]
 
 async function buscar() {
-  if (!numeroSerie.value) {
-    snackbar.value = { show: true, text: 'Ingrese un número de serie', color: 'warning' }
-    return
-  }
-  buscando.value = true
-  buscado.value = true
+  if (!numeroSerie.value) return
+  loading.value = true
+  errorMsg.value = ''
+  serieInfo.value = null
+  movimientos.value = []
+  const token = localStorage.getItem('token')
   try {
-    const token = localStorage.getItem('token')
     const res = await axios.get(`/api/v1/inventario/serie/${encodeURIComponent(numeroSerie.value)}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
-    resultados.value = res.data?.datos || []
-    if (resultados.value.length === 0) {
-      snackbar.value = { show: true, text: 'Serie no encontrada', color: 'warning' }
-    }
+    serieInfo.value = res.data.datos
+    movimientos.value = res.data.historial || []
   } catch (err) {
-    console.error(err)
-    resultados.value = []
-    snackbar.value = { show: true, text: err.response?.data?.error || 'Error al buscar serie', color: 'error' }
-  } finally {
-    buscando.value = false
-  }
+    console.error('Error al buscar serie:', err)
+    errorMsg.value = err.response?.data?.error || 'Serie no encontrada'
+    serieInfo.value = null
+    movimientos.value = []
+  } finally { loading.value = false }
 }
 </script>

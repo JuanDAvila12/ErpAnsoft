@@ -1,354 +1,193 @@
 <template>
-  <div class="pos-container">
+  <div>
+    <div class="d-flex align-center mb-4">
+      <v-icon color="green" size="36" class="mr-3">mdi-cart</v-icon>
+      <h2 class="text-h4 font-weight-bold mb-0">Punto de Venta (POS)</h2>
+    </div>
     <v-row>
-      <!-- Columna izquierda: Búsqueda y productos -->
       <v-col cols="12" md="7">
-        <div class="d-flex align-center mb-4">
-          <v-icon color="orange" size="36" class="mr-3">mdi-cash-register</v-icon>
-          <h2 class="text-h4 font-weight-bold mb-0">Punto de Venta</h2>
-        </div>
-
-        <!-- Buscador de productos -->
         <v-card variant="tonal" class="pa-4 mb-4">
-          <v-autocomplete
-            v-model="productoSeleccionado"
-            :items="productos"
-            item-title="nombre"
-            item-value="id"
-            label="Buscar producto por nombre, SKU o código de barras"
-            variant="outlined"
-            density="compact"
-            prepend-inner-icon="mdi-magnify"
-            clearable
-            hide-no-data
-            @update:search="onBuscarProducto"
-            @update:model-value="agregarAlCarrito"
-            return-object
-          >
-            <template v-slot:item="{ item, props }">
-              <v-list-item v-bind="props" :subtitle="`SKU: ${item.raw.sku} | $${(item.raw.precio_venta || 0).toFixed(2)}`">
-                <template v-slot:append>
-                  <v-chip size="small" :color="item.raw.stock_actual > 0 ? 'success' : 'error'" variant="tonal">
-                    {{ item.raw.stock_actual || 0 }}
-                  </v-chip>
-                </template>
-              </v-list-item>
-            </template>
-          </v-autocomplete>
+          <v-text-field v-model="busqueda" label="Buscar producto (nombre, SKU, código de barras)" variant="outlined" density="compact" clearable @keyup.enter="agregarProductoBuscado" />
+          <v-row>
+            <v-col v-for="art in articulosFiltrados" :key="art.id" cols="6" sm="4">
+              <v-card variant="outlined" class="pa-2 text-center" hover @click="agregarAlCarrito(art)">
+                <div class="text-caption font-weight-bold">{{ art.nombre }}</div>
+                <div class="text-h6 font-weight-bold text-primary">${{ (art.precio_venta || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</div>
+                <div class="text-caption">Stock: {{ art.stock_actual || 0 }}</div>
+              </v-card>
+            </v-col>
+          </v-row>
         </v-card>
-
-        <!-- Resultados de búsqueda rápida -->
-        <v-row v-if="productos.length > 0" class="mb-4">
-          <v-col
-            v-for="(prod, i) in productos.slice(0, 8)"
-            :key="i"
-            cols="6"
-            sm="4"
-            md="3"
-          >
-            <v-card
-              variant="tonal"
-              color="primary"
-              hover
-              class="pa-3 text-center"
-              @click="agregarAlCarrito(prod)"
-            >
-              <v-icon size="32" class="mb-1">mdi-package</v-icon>
-              <div class="text-caption font-weight-bold text-truncate">{{ prod.nombre }}</div>
-              <div class="text-body-2 font-weight-bold">${{ (prod.precio_venta || 0).toFixed(2) }}</div>
-            </v-card>
-          </v-col>
-        </v-row>
       </v-col>
-
-      <!-- Columna derecha: Carrito -->
       <v-col cols="12" md="5">
-        <v-card variant="tonal" class="pa-4 h-100 d-flex flex-column">
-          <h3 class="text-h6 mb-3">
-            <v-icon class="mr-2">mdi-cart</v-icon>
-            Carrito ({{ carrito.length }})
-          </h3>
-
-          <!-- Selector de cliente -->
-          <v-autocomplete
-            v-model="clienteSeleccionado"
-            :items="clientes"
-            item-title="razon_social"
-            item-value="id"
-            label="Cliente (opcional)"
-            variant="outlined"
-            density="compact"
-            clearable
-            return-object
-            class="mb-3"
-            prepend-inner-icon="mdi-account"
-          />
-
-          <!-- Selector de método de pago -->
-          <v-select
-            v-model="metodoPago"
-            :items="metodosPago"
-            label="Método de pago"
-            variant="outlined"
-            density="compact"
-            class="mb-3"
-            prepend-inner-icon="mdi-credit-card"
-          />
-
-          <!-- Lista del carrito -->
-          <v-list class="flex-grow-1 overflow-auto" style="max-height: 350px;">
-            <v-list-item
-              v-for="(item, i) in carrito"
-              :key="i"
-              class="mb-1"
-              color="grey-lighten-3"
-            >
+        <v-card variant="tonal" class="pa-4">
+          <v-card-title class="text-h5">Carrito</v-card-title>
+          <v-list v-if="carrito.length">
+            <v-list-item v-for="(item, i) in carrito" :key="i">
               <template v-slot:prepend>
-                <v-btn
-                  icon="mdi-close"
-                  size="x-small"
-                  color="error"
-                  variant="text"
-                  @click="eliminarDelCarrito(i)"
-                />
+                <v-btn icon="mdi-close" size="x-small" variant="text" color="error" @click="carrito.splice(i, 1)" />
               </template>
-
-              <v-list-item-title class="text-body-2 font-weight-bold">
-                {{ item.nombre }}
-              </v-list-item-title>
-
-              <template v-slot:append>
-                <div class="d-flex align-center ga-2">
-                  <v-btn
-                    icon="mdi-minus"
-                    size="x-small"
-                    variant="tonal"
-                    @click="disminuirCantidad(i)"
-                    :disabled="item.cantidad <= 1"
-                  />
-                  <span class="text-body-1 font-weight-bold mx-2">{{ item.cantidad }}</span>
-                  <v-btn
-                    icon="mdi-plus"
-                    size="x-small"
-                    variant="tonal"
-                    @click="aumentarCantidad(i)"
-                  />
-                  <span class="text-body-1 font-weight-bold ml-3" style="min-width: 80px; text-align: right;">
-                    ${{ (item.subtotal || 0).toFixed(2) }}
-                  </span>
-                </div>
-              </template>
+              <v-list-item-title>{{ item.nombre }}</v-list-item-title>
+              <v-list-item-subtitle>
+                <v-row dense align="center">
+                  <v-col cols="4"><v-text-field v-model="item.cantidad" label="Cant" type="number" min="1" variant="outlined" density="compact" hide-details /></v-col>
+                  <v-col cols="4">${{ (item.precio_venta || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</v-col>
+                  <v-col cols="4" class="text-right">${{ (item.subtotal || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</v-col>
+                </v-row>
+              </v-list-item-subtitle>
             </v-list-item>
           </v-list>
-
           <v-divider class="my-3" />
-
-          <!-- Totales -->
-          <div class="d-flex justify-space-between text-h5 font-weight-bold mb-4">
-            <span>Total:</span>
-            <span>${{ total.toFixed(2) }}</span>
-          </div>
-
-          <!-- Botón Cobrar -->
-          <v-btn
-            color="success"
-            size="x-large"
-            block
-            :disabled="carrito.length === 0"
-            :loading="cobrando"
-            @click="cobrar"
-          >
-            <v-icon start size="28">mdi-cash</v-icon>
-            Cobrar - ${{ total.toFixed(2) }}
-          </v-btn>
+          <div class="text-h4 text-right font-weight-bold mb-4">Total: ${{ totalCarrito.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</div>
+          <v-row>
+            <v-col cols="12"><v-autocomplete v-model="clienteId" :items="clientes" item-title="razon_social" item-value="id" label="Cliente (opcional)" variant="outlined" density="compact" clearable /></v-col>
+            <v-col cols="12"><v-select v-model="metodoPago" :items="metodosPago" label="Método de pago" variant="outlined" density="compact" /></v-col>
+            <v-col cols="12"><v-text-field v-model="montoRecibido" label="Monto recibido" type="number" prefix="$" variant="outlined" density="compact" /></v-col>
+            <v-col cols="12" class="text-h5 text-right">Cambio: ${{ cambio.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</v-col>
+            <v-col cols="12">
+              <v-btn color="success" size="large" block :loading="cobrando" @click="cobrar" :disabled="carrito.length === 0">
+                <v-icon start>mdi-cash</v-icon> Cobrar (${{ totalCarrito.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }})
+              </v-btn>
+            </v-col>
+          </v-row>
         </v-card>
       </v-col>
     </v-row>
 
-    <!-- Snackbar -->
-    <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000">
-      {{ snackbar.mensaje }}
-      <template v-slot:actions>
-        <v-btn variant="text" @click="snackbar.show = false">Cerrar</v-btn>
-      </template>
-    </v-snackbar>
+    <v-dialog v-model="dialogoResumen" max-width="500">
+      <v-card>
+        <v-card-title class="text-h5">Venta Completada</v-card-title>
+        <v-card-text>
+          <p><strong>Folio:</strong> {{ ultimaVenta?.folio }}</p>
+          <p><strong>Total:</strong> ${{ (ultimaVenta?.total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</p>
+          <p><strong>Método de pago:</strong> {{ metodoPago }}</p>
+          <v-divider class="my-2" />
+          <h4>Artículos:</h4>
+          <v-list density="compact">
+            <v-list-item v-for="art in ultimaVenta?.articulos || []" :key="art.id">
+              <v-list-item-title>{{ art.articulo_nombre }} x {{ art.cantidad }} = ${{ (art.subtotal || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</v-list-item-title>
+            </v-list-item>
+          </v-list>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="dialogoResumen = false; limpiarCarrito()">Cerrar</v-btn>
+          <v-btn color="primary" variant="tonal" @click="imprimirResumen">Imprimir</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000">{{ snackbar.mensaje }}<template v-slot:actions><v-btn variant="text" @click="snackbar.show = false">Cerrar</v-btn></template></v-snackbar>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 
-// Estado
-const busquedaProducto = ref('')
-const productos = ref([])
-const productoSeleccionado = ref(null)
-const carrito = ref([])
+const busqueda = ref('')
+const articulos = ref([])
 const clientes = ref([])
-const clienteSeleccionado = ref(null)
+const carrito = ref([])
+const clienteId = ref(null)
 const metodoPago = ref('efectivo')
+const montoRecibido = ref(0)
 const cobrando = ref(false)
+const dialogoResumen = ref(false)
+const ultimaVenta = ref(null)
+const metodosPago = ['efectivo', 'tarjeta_credito', 'tarjeta_debito', 'transferencia']
+const snackbar = ref({ show: false, mensaje: '', color: 'success' })
 
-const metodosPago = [
-  { title: 'Efectivo', value: 'efectivo' },
-  { title: 'Tarjeta de Débito', value: 'tarjeta_debito' },
-  { title: 'Tarjeta de Crédito', value: 'tarjeta_credito' },
-  { title: 'Transferencia', value: 'transferencia' },
-]
-
-const snackbar = ref({
-  show: false,
-  mensaje: '',
-  color: 'success',
+const articulosFiltrados = computed(() => {
+  if (!busqueda.value) return articulos.value.slice(0, 12)
+  const q = busqueda.value.toLowerCase()
+  return articulos.value.filter(a => a.nombre?.toLowerCase().includes(q) || a.sku?.toLowerCase().includes(q))
 })
 
-// Total del carrito
-const total = computed(() => {
-  return carrito.value.reduce((sum, item) => sum + (item.subtotal || 0), 0)
+const totalCarrito = computed(() => {
+  return carrito.value.reduce((s, item) => {
+    item.subtotal = (parseFloat(item.cantidad || 1) * parseFloat(item.precio_venta || 0))
+    return s + item.subtotal
+  }, 0)
 })
 
-// Buscar productos
-let timeoutBusqueda = null
-function onBuscarProducto(val) {
-  busquedaProducto.value = val
-  clearTimeout(timeoutBusqueda)
-  timeoutBusqueda = setTimeout(() => {
-    buscarProductos(val)
-  }, 300)
-}
+const cambio = computed(() => {
+  return Math.max(0, parseFloat(montoRecibido.value || 0) - totalCarrito.value)
+})
 
-async function buscarProductos(search = '') {
-  try {
-    const token = localStorage.getItem('token')
-    const response = await axios.get(`/api/v1/articulos?search=${encodeURIComponent(search)}&limite=20`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    productos.value = response.data.datos || []
-  } catch (err) {
-    console.error('Error al buscar productos:', err)
-  }
-}
-
-// Cargar clientes al montar
-async function cargarClientes() {
-  try {
-    const token = localStorage.getItem('token')
-    const response = await axios.get('/api/v1/entidades?rol=cliente', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    clientes.value = response.data.datos || []
-  } catch (err) {
-    console.error('Error al cargar clientes:', err)
-  }
-}
-
-// Cargar productos iniciales
-async function cargarProductosIniciales() {
-  await buscarProductos('')
-}
-
-// Agregar producto al carrito
-function agregarAlCarrito(producto) {
-  if (!producto) return
-
-  const existente = carrito.value.find(item => item.id === producto.id)
+function agregarAlCarrito(art) {
+  const existente = carrito.value.find(i => i.id === art.id)
   if (existente) {
-    existente.cantidad += 1
-    existente.subtotal = existente.cantidad * parseFloat(producto.precio_venta || 0)
+    existente.cantidad = parseInt(existente.cantidad || 1) + 1
   } else {
-    carrito.value.push({
-      id: producto.id,
-      sku: producto.sku,
-      nombre: producto.nombre,
-      cantidad: 1,
-      precio_venta: parseFloat(producto.precio_venta || 0),
-      subtotal: parseFloat(producto.precio_venta || 0),
-    })
-  }
-  productoSeleccionado.value = null
-}
-
-function eliminarDelCarrito(index) {
-  carrito.value.splice(index, 1)
-}
-
-function aumentarCantidad(index) {
-  const item = carrito.value[index]
-  item.cantidad += 1
-  item.subtotal = item.cantidad * item.precio_venta
-}
-
-function disminuirCantidad(index) {
-  const item = carrito.value[index]
-  if (item.cantidad > 1) {
-    item.cantidad -= 1
-    item.subtotal = item.cantidad * item.precio_venta
+    carrito.value.push({ ...art, cantidad: 1, subtotal: art.precio_venta })
   }
 }
 
-// Cobrar
+function agregarProductoBuscado() {
+  if (articulosFiltrados.value.length === 1) {
+    agregarAlCarrito(articulosFiltrados.value[0])
+    busqueda.value = ''
+  }
+}
+
+function limpiarCarrito() {
+  carrito.value = []; clienteId.value = null; montoRecibido.value = 0
+}
+
 async function cobrar() {
+  if (carrito.value.length === 0) return
   cobrando.value = true
+  const token = localStorage.getItem('token')
   try {
-    const token = localStorage.getItem('token')
-
-    const payload = {
+    const res = await axios.post('/api/v1/transacciones', {
       tipo: 'venta',
+      entidad_cliente_id: clienteId.value,
       metodo_pago: metodoPago.value,
       articulos: carrito.value.map(item => ({
         articulo_id: item.id,
-        cantidad: item.cantidad,
-        precio_unitario: item.precio_venta,
+        cantidad: parseFloat(item.cantidad || 1),
+        precio_unitario: parseFloat(item.precio_venta || 0),
       })),
-    }
-
-    if (clienteSeleccionado.value) {
-      payload.entidad_cliente_id = clienteSeleccionado.value.id
-    }
-
-    const response = await axios.post('/api/v1/documentos-venta', payload, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-
-    const { datos } = response.data
-    snackbar.value = {
-      show: true,
-      mensaje: `Venta registrada exitosamente. Folio: ${datos?.folio || 'N/A'}`,
-      color: 'success',
-    }
-
-    // Limpiar carrito después de cobrar exitosamente
-    carrito.value = []
-    clienteSeleccionado.value = null
-    metodoPago.value = 'efectivo'
+    }, { headers: { Authorization: `Bearer ${token}` } })
+    ultimaVenta.value = res.data.datos
+    dialogoResumen.value = true
+    snackbar.value = { show: true, mensaje: `Venta ${res.data.datos.folio} completada`, color: 'success' }
   } catch (err) {
-    snackbar.value = {
-      show: true,
-      mensaje: err.response?.data?.mensaje || 'Error al procesar la venta',
-      color: 'error',
-    }
-  } finally {
-    cobrando.value = false
-  }
+    snackbar.value = { show: true, mensaje: err.response?.data?.error || 'Error al cobrar', color: 'error' }
+  } finally { cobrando.value = false }
 }
 
-// Inicializar
-cargarClientes()
-cargarProductosIniciales()
+function imprimirResumen() {
+  const ventana = window.open('', '_blank')
+  ventana.document.write(`
+    <html><head><title>Ticket - ${ultimaVenta.value?.folio}</title>
+    <style>body{font-family:monospace;padding:20px}table{width:100%;border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px}</style>
+    </head><body>
+    <h2>ERP Ansoft - Ticket de Venta</h2>
+    <p><strong>Folio:</strong> ${ultimaVenta.value?.folio}</p>
+    <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-MX')}</p>
+    <p><strong>Método de pago:</strong> ${metodoPago.value}</p>
+    <table><tr><th>Artículo</th><th>Cant</th><th>Precio</th><th>Subtotal</th></tr>
+    ${(ultimaVenta.value?.articulos || []).map(a => `<tr><td>${a.articulo_nombre}</td><td>${a.cantidad}</td><td>$${parseFloat(a.precio_unitario).toFixed(2)}</td><td>$${parseFloat(a.subtotal).toFixed(2)}</td></tr>`).join('')}
+    </table>
+    <h3>Total: $${(ultimaVenta.value?.total || 0).toFixed(2)}</h3>
+    <p>¡Gracias por su compra!</p>
+    <script>window.print();window.close();<\/script>
+    </body></html>
+  `)
+  ventana.document.close()
+}
+
+onMounted(async () => {
+  const token = localStorage.getItem('token')
+  try {
+    const [a, c] = await Promise.all([
+      axios.get('/api/v1/articulos?limite=200', { headers: { Authorization: `Bearer ${token}` } }),
+      axios.get('/api/v1/entidades?rol=cliente', { headers: { Authorization: `Bearer ${token}` } }),
+    ])
+    articulos.value = a.data.datos || []
+    clientes.value = c.data.datos || []
+  } catch (err) { console.error(err) }
+})
 </script>
-
-<style lang="scss" scoped>
-.pos-container {
-  height: 100%;
-
-  .overflow-auto {
-    &::-webkit-scrollbar {
-      width: 6px;
-    }
-    &::-webkit-scrollbar-thumb {
-      background: rgba(0,0,0,0.1);
-      border-radius: 3px;
-    }
-  }
-}
-</style>

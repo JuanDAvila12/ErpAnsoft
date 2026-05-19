@@ -2,8 +2,48 @@
   <div>
     <h2 class="text-h4 mb-2">Bienvenido, {{ usuario?.nombre || 'Usuario' }}</h2>
     <p class="text-body-1 text-medium-emphasis mb-6">
-      Panel de control del sistema SPI ERP
+      Panel de control del sistema ERP Ansoft
     </p>
+
+    <!-- KPIs -->
+    <v-row class="mb-4">
+      <v-col cols="12" sm="6" md="3">
+        <v-card variant="tonal" color="primary" class="pa-3">
+          <v-card-text class="text-center">
+            <v-icon size="36" color="primary">mdi-cart-arrow-down</v-icon>
+            <div class="text-h5 font-weight-bold mt-1">${{ kpis.ventasMes.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</div>
+            <div class="text-caption">Ventas del Mes</div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+      <v-col cols="12" sm="6" md="3">
+        <v-card variant="tonal" color="purple" class="pa-3">
+          <v-card-text class="text-center">
+            <v-icon size="36" color="purple">mdi-truck</v-icon>
+            <div class="text-h5 font-weight-bold mt-1">${{ kpis.comprasMes.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</div>
+            <div class="text-caption">Compras del Mes</div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+      <v-col cols="12" sm="6" md="3">
+        <v-card variant="tonal" color="warning" class="pa-3">
+          <v-card-text class="text-center">
+            <v-icon size="36" color="warning">mdi-package-variant-closed</v-icon>
+            <div class="text-h5 font-weight-bold mt-1">{{ kpis.stockBajo }}</div>
+            <div class="text-caption">Productos con Stock Bajo</div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+      <v-col cols="12" sm="6" md="3">
+        <v-card variant="tonal" color="error" class="pa-3">
+          <v-card-text class="text-center">
+            <v-icon size="36" color="error">mdi-account-cash</v-icon>
+            <div class="text-h5 font-weight-bold mt-1">${{ kpis.cuentasCobrar.toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</div>
+            <div class="text-caption">Cuentas por Cobrar</div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
 
     <!-- Tarjetas de acceso rápido -->
     <v-row>
@@ -88,24 +128,48 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import apiClient from '@/plugins/axios'
 
 const router = useRouter()
 const usuario = ref({})
+const kpis = ref({ ventasMes: 0, comprasMes: 0, stockBajo: 0, cuentasCobrar: 0 })
 
 const cardsAcceso = [
-  { titulo: 'Nueva Venta', icono: 'mdi-cart-plus', color: 'primary', descripcion: 'Registrar una nueva venta', ruta: '/dashboard/pos' },
-  { titulo: 'Cotizaciones', icono: 'mdi-file-document-outline', color: 'primary', descripcion: 'Administrar cotizaciones', ruta: '/dashboard/ventas/cotizaciones' },
-  { titulo: 'Facturación CFDI', icono: 'mdi-file-invoice', color: 'error', descripcion: 'Generar facturas electrónicas', ruta: '/dashboard/ventas/facturas' },
-  { titulo: 'Inventario', icono: 'mdi-package-variant', color: 'warning', descripcion: 'Control de existencias', ruta: '/dashboard/inventario/articulos' },
   { titulo: 'Punto de Venta', icono: 'mdi-cash-register', color: 'orange', descripcion: 'POS rápido', ruta: '/dashboard/pos' },
+  { titulo: 'Cotizaciones', icono: 'mdi-file-document-outline', color: 'primary', descripcion: 'Administrar cotizaciones', ruta: '/dashboard/ventas/cotizaciones' },
+  { titulo: 'Facturación', icono: 'mdi-file-invoice', color: 'error', descripcion: 'Facturas electrónicas', ruta: '/dashboard/ventas/facturas' },
+  { titulo: 'Inventario', icono: 'mdi-package-variant', color: 'warning', descripcion: 'Control de existencias', ruta: '/dashboard/inventario/stock' },
+  { titulo: 'Compras', icono: 'mdi-truck', color: 'purple', descripcion: 'Órdenes de compra', ruta: '/dashboard/compras/ordenes' },
+  { titulo: 'Contabilidad', icono: 'mdi-book-open-page-variant', color: 'blue', descripcion: 'Cuentas y asientos', ruta: '/dashboard/contabilidad/cuentas' },
+  { titulo: 'CRM', icono: 'mdi-chart-line', color: 'orange', descripcion: 'Oportunidades', ruta: '/dashboard/crm/oportunidades' },
   { titulo: 'Configuración', icono: 'mdi-cog-outline', color: 'grey', descripcion: 'Catálogos del sistema', ruta: '/dashboard/configuracion/catalogos' },
 ]
+
+async function cargarKPIs() {
+  try {
+    const hoy = new Date()
+    const mesInicio = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0]
+    const mesFin = hoy.toISOString().split('T')[0]
+
+    const [ventasRes, comprasRes, stockRes] = await Promise.all([
+      apiClient.get('/api/v1/transacciones', { params: { tipo: 'venta', fecha_desde: mesInicio, fecha_hasta: mesFin, estado: 'confirmado' } }),
+      apiClient.get('/api/v1/transacciones', { params: { tipo: 'compra', fecha_desde: mesInicio, fecha_hasta: mesFin, estado: 'confirmado' } }),
+      apiClient.get('/api/v1/inventario/stock', { params: { stock_bajo: true } }),
+    ])
+
+    kpis.value.ventasMes = (ventasRes.data || []).reduce((s, t) => s + parseFloat(t.total || 0), 0)
+    kpis.value.comprasMes = (comprasRes.data || []).reduce((s, t) => s + parseFloat(t.total || 0), 0)
+    kpis.value.stockBajo = (stockRes.data.datos || []).length
+    kpis.value.cuentasCobrar = 0 // Placeholder - se puede calcular desde contabilidad
+  } catch (err) { console.error('Error cargando KPIs:', err) }
+}
 
 onMounted(() => {
   const stored = localStorage.getItem('usuario')
   if (stored) {
     usuario.value = JSON.parse(stored)
   }
+  cargarKPIs()
 })
 
 function irA(ruta) {

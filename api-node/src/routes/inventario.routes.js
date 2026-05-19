@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { verificarToken } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const pool = require('../db');
 const ReportesModel = require('../models/reportes.model');
+const { AppError } = require('../middleware/errorHandler');
 
 /**
  * ============================================
@@ -14,15 +15,14 @@ const ReportesModel = require('../models/reportes.model');
  * GET /api/v1/inventario/almacenes
  * Listar todos los almacenes.
  */
-router.get('/almacenes', verificarToken, async (req, res) => {
+router.get('/almacenes', authMiddleware, async (req, res, next) => {
   try {
     const result = await pool.query(
       'SELECT * FROM almacenes ORDER BY nombre'
     );
     res.json({ exito: true, datos: result.rows });
   } catch (err) {
-    console.error('Error al listar almacenes:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('INV-001', err.message));
   }
 });
 
@@ -30,18 +30,23 @@ router.get('/almacenes', verificarToken, async (req, res) => {
  * GET /api/v1/inventario/almacenes/:id
  * Obtener un almacén por ID.
  */
-router.get('/almacenes/:id', verificarToken, async (req, res) => {
+router.get('/almacenes/:id', authMiddleware, async (req, res, next) => {
   try {
     const result = await pool.query(
       'SELECT * FROM almacenes WHERE id = $1', [req.params.id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ exito: false, error: 'Almacén no encontrado' });
+      return res.status(404).json({
+        codigo: 'INV-002',
+        mensaje: 'Almacén no encontrado',
+        modulo: 'Inventario',
+        detalle: `No se encontró almacén con ID ${req.params.id}`,
+        timestamp: new Date().toISOString(),
+      });
     }
     res.json({ exito: true, datos: result.rows[0] });
   } catch (err) {
-    console.error('Error al obtener almacén:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('INV-002', err.message));
   }
 });
 
@@ -49,11 +54,17 @@ router.get('/almacenes/:id', verificarToken, async (req, res) => {
  * POST /api/v1/inventario/almacenes
  * Crear un nuevo almacén.
  */
-router.post('/almacenes', verificarToken, async (req, res) => {
+router.post('/almacenes', authMiddleware, async (req, res, next) => {
   try {
     const { nombre, ubicacion, activo } = req.body;
     if (!nombre) {
-      return res.status(400).json({ exito: false, error: 'El nombre es requerido' });
+      return res.status(400).json({
+        codigo: 'SYS-003',
+        mensaje: 'Solicitud inválida',
+        modulo: 'Sistema',
+        detalle: 'El nombre es requerido',
+        timestamp: new Date().toISOString(),
+      });
     }
     const result = await pool.query(
       `INSERT INTO almacenes (nombre, ubicacion, activo)
@@ -63,8 +74,7 @@ router.post('/almacenes', verificarToken, async (req, res) => {
     );
     res.status(201).json({ exito: true, datos: result.rows[0] });
   } catch (err) {
-    console.error('Error al crear almacén:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('INV-003', err.message));
   }
 });
 
@@ -72,7 +82,7 @@ router.post('/almacenes', verificarToken, async (req, res) => {
  * PUT /api/v1/inventario/almacenes/:id
  * Actualizar un almacén.
  */
-router.put('/almacenes/:id', verificarToken, async (req, res) => {
+router.put('/almacenes/:id', authMiddleware, async (req, res, next) => {
   try {
     const { nombre, ubicacion, activo } = req.body;
     const result = await pool.query(
@@ -86,12 +96,17 @@ router.put('/almacenes/:id', verificarToken, async (req, res) => {
       [nombre, ubicacion, activo, req.params.id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ exito: false, error: 'Almacén no encontrado' });
+      return res.status(404).json({
+        codigo: 'INV-002',
+        mensaje: 'Almacén no encontrado',
+        modulo: 'Inventario',
+        detalle: `No se encontró almacén con ID ${req.params.id}`,
+        timestamp: new Date().toISOString(),
+      });
     }
     res.json({ exito: true, datos: result.rows[0] });
   } catch (err) {
-    console.error('Error al actualizar almacén:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('INV-004', err.message));
   }
 });
 
@@ -106,7 +121,7 @@ router.put('/almacenes/:id', verificarToken, async (req, res) => {
  * Listar entidades con filtros opcionales.
  * Query params: rol, search, activo
  */
-router.get('/entidades', verificarToken, async (req, res) => {
+router.get('/entidades', authMiddleware, async (req, res, next) => {
   try {
     const { rol, search, activo } = req.query;
     let query = `
@@ -142,8 +157,7 @@ router.get('/entidades', verificarToken, async (req, res) => {
     const result = await pool.query(query, params);
     res.json({ exito: true, datos: result.rows });
   } catch (err) {
-    console.error('Error al listar entidades:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('ENT-004', err.message));
   }
 });
 
@@ -151,7 +165,7 @@ router.get('/entidades', verificarToken, async (req, res) => {
  * GET /api/v1/entidades/:id
  * Obtener entidad por ID.
  */
-router.get('/entidades/:id', verificarToken, async (req, res) => {
+router.get('/entidades/:id', authMiddleware, async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT e.*,
@@ -160,12 +174,17 @@ router.get('/entidades/:id', verificarToken, async (req, res) => {
       [req.params.id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ exito: false, error: 'Entidad no encontrada' });
+      return res.status(404).json({
+        codigo: 'ENT-003',
+        mensaje: 'Entidad no encontrada',
+        modulo: 'Entidades',
+        detalle: `No se encontró entidad con ID ${req.params.id}`,
+        timestamp: new Date().toISOString(),
+      });
     }
     res.json({ exito: true, datos: result.rows[0] });
   } catch (err) {
-    console.error('Error al obtener entidad:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('ENT-003', err.message));
   }
 });
 
@@ -173,7 +192,7 @@ router.get('/entidades/:id', verificarToken, async (req, res) => {
  * POST /api/v1/entidades
  * Crear una nueva entidad con sus roles.
  */
-router.post('/entidades', verificarToken, async (req, res) => {
+router.post('/entidades', authMiddleware, async (req, res, next) => {
   const client = await pool.connect();
   try {
     const { razon_social, nombre_comercial, rfc, email, telefono,
@@ -181,7 +200,13 @@ router.post('/entidades', verificarToken, async (req, res) => {
             activo, roles } = req.body;
 
     if (!razon_social || !rfc) {
-      return res.status(400).json({ exito: false, error: 'Razón social y RFC son requeridos' });
+      return res.status(400).json({
+        codigo: 'ENT-006',
+        mensaje: 'Razón social y RFC son requeridos',
+        modulo: 'Entidades',
+        detalle: 'Ambos campos son obligatorios para crear una entidad',
+        timestamp: new Date().toISOString(),
+      });
     }
 
     await client.query('BEGIN');
@@ -213,11 +238,16 @@ router.post('/entidades', verificarToken, async (req, res) => {
     res.status(201).json({ exito: true, datos: entidad });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('Error al crear entidad:', err);
-    if (err.code === '23505') { // unique violation
-      return res.status(400).json({ exito: false, error: 'El RFC ya existe' });
+    if (err.code === '23505') {
+      return res.status(409).json({
+        codigo: 'ENT-005',
+        mensaje: 'RFC duplicado',
+        modulo: 'Entidades',
+        detalle: 'Ya existe una entidad con ese RFC',
+        timestamp: new Date().toISOString(),
+      });
     }
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('ENT-001', err.message));
   } finally {
     client.release();
   }
@@ -227,7 +257,7 @@ router.post('/entidades', verificarToken, async (req, res) => {
  * PUT /api/v1/entidades/:id
  * Actualizar entidad y sus roles.
  */
-router.put('/entidades/:id', verificarToken, async (req, res) => {
+router.put('/entidades/:id', authMiddleware, async (req, res, next) => {
   const client = await pool.connect();
   try {
     const { razon_social, nombre_comercial, rfc, email, telefono,
@@ -258,7 +288,13 @@ router.put('/entidades/:id', verificarToken, async (req, res) => {
     );
     if (result.rows.length === 0) {
       await client.query('ROLLBACK');
-      return res.status(404).json({ exito: false, error: 'Entidad no encontrada' });
+      return res.status(404).json({
+        codigo: 'ENT-003',
+        mensaje: 'Entidad no encontrada',
+        modulo: 'Entidades',
+        detalle: `No se encontró entidad con ID ${req.params.id}`,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     // Actualizar roles si se especifican
@@ -286,8 +322,16 @@ router.put('/entidades/:id', verificarToken, async (req, res) => {
     res.json({ exito: true, datos: entidadFinal.rows[0] });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('Error al actualizar entidad:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    if (err.code === '23505') {
+      return res.status(409).json({
+        codigo: 'ENT-005',
+        mensaje: 'RFC duplicado',
+        modulo: 'Entidades',
+        detalle: 'Ya existe otra entidad con ese RFC',
+        timestamp: new Date().toISOString(),
+      });
+    }
+    next(new AppError('ENT-002', err.message));
   } finally {
     client.release();
   }
@@ -303,7 +347,7 @@ router.put('/entidades/:id', verificarToken, async (req, res) => {
  * GET /api/v1/articulos
  * Listar artículos con filtros opcionales.
  */
-router.get('/articulos', verificarToken, async (req, res) => {
+router.get('/articulos', authMiddleware, async (req, res, next) => {
   try {
     const { search, categoria_id, marca_id, activo, limite } = req.query;
     let query = `
@@ -346,8 +390,7 @@ router.get('/articulos', verificarToken, async (req, res) => {
     const result = await pool.query(query, params);
     res.json({ exito: true, datos: result.rows });
   } catch (err) {
-    console.error('Error al listar artículos:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('ART-006', err.message));
   }
 });
 
@@ -355,7 +398,7 @@ router.get('/articulos', verificarToken, async (req, res) => {
  * GET /api/v1/articulos/:id
  * Obtener artículo por ID.
  */
-router.get('/articulos/:id', verificarToken, async (req, res) => {
+router.get('/articulos/:id', authMiddleware, async (req, res, next) => {
   try {
     const result = await pool.query(
       `SELECT a.*, um.nombre AS unidad_medida_nombre, um.clave_sat AS unidad_clave_sat,
@@ -370,12 +413,17 @@ router.get('/articulos/:id', verificarToken, async (req, res) => {
       [req.params.id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ exito: false, error: 'Artículo no encontrado' });
+      return res.status(404).json({
+        codigo: 'ART-001',
+        mensaje: 'Artículo no encontrado',
+        modulo: 'Artículos',
+        detalle: `No se encontró artículo con ID ${req.params.id}`,
+        timestamp: new Date().toISOString(),
+      });
     }
     res.json({ exito: true, datos: result.rows[0] });
   } catch (err) {
-    console.error('Error al obtener artículo:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('ART-001', err.message));
   }
 });
 
@@ -383,7 +431,7 @@ router.get('/articulos/:id', verificarToken, async (req, res) => {
  * POST /api/v1/articulos
  * Crear un nuevo artículo.
  */
-router.post('/articulos', verificarToken, async (req, res) => {
+router.post('/articulos', authMiddleware, async (req, res, next) => {
   try {
     const {
       sku, nombre, precio_venta, costo_promedio, clave_sat,
@@ -392,7 +440,13 @@ router.post('/articulos', verificarToken, async (req, res) => {
     } = req.body;
 
     if (!sku || !nombre) {
-      return res.status(400).json({ exito: false, error: 'SKU y nombre son requeridos' });
+      return res.status(400).json({
+        codigo: 'SYS-003',
+        mensaje: 'Solicitud inválida',
+        modulo: 'Sistema',
+        detalle: 'SKU y nombre son requeridos',
+        timestamp: new Date().toISOString(),
+      });
     }
 
     const result = await pool.query(
@@ -410,11 +464,16 @@ router.post('/articulos', verificarToken, async (req, res) => {
     );
     res.status(201).json({ exito: true, datos: result.rows[0] });
   } catch (err) {
-    console.error('Error al crear artículo:', err);
     if (err.code === '23505') {
-      return res.status(400).json({ exito: false, error: 'El SKU ya existe' });
+      return res.status(409).json({
+        codigo: 'ART-002',
+        mensaje: 'SKU duplicado',
+        modulo: 'Artículos',
+        detalle: `El SKU ya existe en el sistema`,
+        timestamp: new Date().toISOString(),
+      });
     }
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('ART-003', err.message));
   }
 });
 
@@ -422,7 +481,7 @@ router.post('/articulos', verificarToken, async (req, res) => {
  * PUT /api/v1/articulos/:id
  * Actualizar un artículo.
  */
-router.put('/articulos/:id', verificarToken, async (req, res) => {
+router.put('/articulos/:id', authMiddleware, async (req, res, next) => {
   try {
     const {
       sku, nombre, precio_venta, costo_promedio, clave_sat,
@@ -454,12 +513,17 @@ router.put('/articulos/:id', verificarToken, async (req, res) => {
       ]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ exito: false, error: 'Artículo no encontrado' });
+      return res.status(404).json({
+        codigo: 'ART-001',
+        mensaje: 'Artículo no encontrado',
+        modulo: 'Artículos',
+        detalle: `No se encontró artículo con ID ${req.params.id}`,
+        timestamp: new Date().toISOString(),
+      });
     }
     res.json({ exito: true, datos: result.rows[0] });
   } catch (err) {
-    console.error('Error al actualizar artículo:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('ART-004', err.message));
   }
 });
 
@@ -473,7 +537,7 @@ router.put('/articulos/:id', verificarToken, async (req, res) => {
  * GET /api/v1/inventario/stock
  * Stock actual por artículo/almacén.
  */
-router.get('/stock', verificarToken, async (req, res) => {
+router.get('/stock', authMiddleware, async (req, res, next) => {
   try {
     const { almacen_id, articulo_id } = req.query;
     const datos = await ReportesModel.stockActual({
@@ -482,8 +546,7 @@ router.get('/stock', verificarToken, async (req, res) => {
     });
     res.json({ exito: true, datos });
   } catch (err) {
-    console.error('Error en stock actual:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('INV-005', err.message));
   }
 });
 
@@ -491,7 +554,7 @@ router.get('/stock', verificarToken, async (req, res) => {
  * GET /api/v1/inventario/movimientos
  * Movimientos de inventario con filtros.
  */
-router.get('/movimientos', verificarToken, async (req, res) => {
+router.get('/movimientos', authMiddleware, async (req, res, next) => {
   try {
     const { articulo_id, almacen_id, fecha_desde, fecha_hasta, tipo_movimiento, limite } = req.query;
     const datos = await ReportesModel.movimientos({
@@ -504,8 +567,7 @@ router.get('/movimientos', verificarToken, async (req, res) => {
     });
     res.json({ exito: true, datos });
   } catch (err) {
-    console.error('Error en movimientos:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('INV-006', err.message));
   }
 });
 
@@ -513,19 +575,62 @@ router.get('/movimientos', verificarToken, async (req, res) => {
  * GET /api/v1/inventario/serie/:numero_serie
  * Trazabilidad de un número de serie.
  */
-router.get('/serie/:numero_serie', verificarToken, async (req, res) => {
+router.get('/serie/:numero_serie', authMiddleware, async (req, res, next) => {
   try {
     const datos = await ReportesModel.trazabilidadSerie(req.params.numero_serie);
     if (datos.length === 0) {
       return res.status(404).json({
-        exito: false,
-        error: `No se encontraron registros para la serie ${req.params.numero_serie}`
+        codigo: 'INV-007',
+        mensaje: 'Serie no encontrada',
+        modulo: 'Inventario',
+        detalle: `No se encontraron registros para la serie ${req.params.numero_serie}`,
+        timestamp: new Date().toISOString(),
       });
     }
     res.json({ exito: true, datos });
   } catch (err) {
-    console.error('Error en trazabilidad de serie:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    next(new AppError('INV-007', err.message));
+  }
+});
+
+/**
+ * POST /api/v1/inventario/movimientos
+ * Registrar un movimiento/ajuste de inventario manual.
+ */
+router.post('/movimientos', authMiddleware, async (req, res, next) => {
+  try {
+    const { articulo_id, almacen_id, tipo_movimiento, cantidad, motivo } = req.body;
+
+    if (!articulo_id || !almacen_id || !tipo_movimiento || !cantidad || cantidad <= 0) {
+      return res.status(400).json({
+        codigo: 'INV-008',
+        mensaje: 'Datos incompletos',
+        detalle: 'articulo_id, almacen_id, tipo_movimiento y cantidad son requeridos',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    if (!['entrada', 'salida'].includes(tipo_movimiento)) {
+      return res.status(400).json({
+        codigo: 'INV-009',
+        mensaje: 'Tipo de movimiento inválido',
+        detalle: 'tipo_movimiento debe ser "entrada" o "salida"',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const tipoTransaccion = tipo_movimiento === 'entrada' ? 'entrada_inventario' : 'salida_inventario';
+
+    const TransaccionesModel = require('../models/transacciones.model');
+    const transaccion = await TransaccionesModel.crearTransaccion(tipoTransaccion, {
+      almacen_id,
+      articulos: [{ articulo_id, cantidad, precio_unitario: 0 }],
+      comentario: motivo || `Ajuste manual: ${tipo_movimiento}`,
+    }, req);
+
+    res.status(201).json({ exito: true, datos: transaccion });
+  } catch (err) {
+    next(new AppError('INV-008', err.message));
   }
 });
 

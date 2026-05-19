@@ -6,8 +6,6 @@
 -- reportes y endpoints para el módulo de compras e inventarios.
 -- ============================================================
 
-BEGIN;
-
 -- ============================================================
 -- BLOQUE 1: NUEVOS TIPOS DE TRANSACCIÓN
 -- ============================================================
@@ -34,13 +32,35 @@ INSERT INTO control_folios (tipo_documento) VALUES
     ('RECT')
 ON CONFLICT (tipo_documento) DO NOTHING;
 
--- 1.3 Añadir en series_documentos las series correspondientes
-INSERT INTO series_documentos (tipo, codigo, descripcion, activo) VALUES
-    ('cotizacion_compra', 'COTC', 'Cotizaciones de compra', true),
-    ('recepcion_compra', 'RECC', 'Recepciones de compra', true),
-    ('traspaso', 'TRAS', 'Traspasos entre almacenes', true),
-    ('recepcion_traspaso', 'RECT', 'Recepciones de traspaso', true)
-ON CONFLICT (codigo) DO NOTHING;
+-- 1.3 Ampliar el CHECK de series_documentos.tipo para incluir nuevos tipos
+ALTER TABLE series_documentos
+DROP CONSTRAINT IF EXISTS series_documentos_tipo_check;
+
+ALTER TABLE series_documentos
+ADD CONSTRAINT series_documentos_tipo_check
+CHECK (tipo IN (
+    'cotizacion','orden_venta','venta',
+    'orden_compra','compra',
+    'cotizacion_compra','recepcion_compra','traspaso','recepcion_traspaso'
+));
+
+-- 1.4 Añadir columna codigo a series_documentos si no existe
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'series_documentos' AND column_name = 'codigo'
+    ) THEN
+        ALTER TABLE series_documentos ADD COLUMN codigo VARCHAR(10);
+    END IF;
+END $$;
+
+-- 1.5 Añadir en series_documentos las series correspondientes
+INSERT INTO series_documentos (tipo, serie, codigo, descripcion, activo) VALUES
+    ('cotizacion_compra', 'COTC', 'COTC', 'Cotizaciones de compra', true),
+    ('recepcion_compra', 'RECC', 'RECC', 'Recepciones de compra', true),
+    ('traspaso', 'TRAS', 'TRAS', 'Traspasos entre almacenes', true),
+    ('recepcion_traspaso', 'RECT', 'RECT', 'Recepciones de traspaso', true)
+ON CONFLICT (tipo, serie) DO NOTHING;
 
 -- ============================================================
 -- BLOQUE 2: MEJORAS A TABLAS EXISTENTES
@@ -254,5 +274,3 @@ BEGIN
     RAISE NOTICE 'Funciones creadas: fn_compras_por_articulo, fn_compras_por_proveedor';
     RAISE NOTICE '============================================';
 END $$;
-
-COMMIT;

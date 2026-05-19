@@ -141,7 +141,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import apiClient from '@/plugins/axios'
 
 const props = defineProps({
   modelValue: Boolean,
@@ -190,7 +190,7 @@ async function handleLoginERP() {
   errorMessage.value = ''
 
   try {
-    const response = await axios.post('/api/v1/auth/login', {
+    const response = await apiClient.post('/api/v1/auth/login', {
       email: email.value,
       password: password.value,
     })
@@ -202,9 +202,7 @@ async function handleLoginERP() {
 
     // Obtener perfil del usuario
     try {
-      const perfilResponse = await axios.get('/api/v1/auth/perfil', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const perfilResponse = await apiClient.get('/api/v1/auth/perfil')
       const usuario = perfilResponse.data.datos
       localStorage.setItem('usuario', JSON.stringify(usuario))
     } catch (e) {
@@ -231,7 +229,7 @@ async function handleLoginCliente() {
   errorMessage.value = ''
 
   try {
-    const response = await axios.post('/api/v1/auth/login-cliente', {
+    const response = await apiClient.post('/api/v1/auth/login-cliente', {
       email: clienteEmail.value,
       password: clientePassword.value,
     })

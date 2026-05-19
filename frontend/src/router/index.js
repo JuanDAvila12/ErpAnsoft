@@ -42,6 +42,8 @@ import SeriesView from '../views/inventario/SeriesView.vue'
 import CuentasView from '../views/contabilidad/CuentasView.vue'
 import AsientosView from '../views/contabilidad/AsientosView.vue'
 import BalanzaView from '../views/contabilidad/BalanzaView.vue'
+import LibroMayorView from '../views/contabilidad/LibroMayorView.vue'
+import StockView from '../views/inventario/StockView.vue'
 
 // Fiscal
 import CFDIView from '../views/fiscal/CFDIView.vue'
@@ -60,6 +62,10 @@ import UsuariosView from '../views/configuracion/UsuariosView.vue'
 import PermisosView from '../views/configuracion/PermisosView.vue'
 import CatalogosView from '../views/configuracion/CatalogosView.vue'
 import AuditoriaView from '../views/configuracion/AuditoriaView.vue'
+import ConfiguracionEmpresaView from '../views/configuracion/ConfiguracionEmpresaView.vue'
+import ConfiguracionAlmacenesView from '../views/configuracion/ConfiguracionAlmacenesView.vue'
+import GeneradorReportesView from '../views/configuracion/GeneradorReportesView.vue'
+import ConfiguracionLogErroresView from '../views/configuracion/ConfiguracionLogErrores.vue'
 
 // Portal Clientes
 import PortalFacturasView from '../views/portal/FacturasView.vue'
@@ -96,6 +102,10 @@ const routes = [
       },
       // Ventas
       {
+        path: 'ventas',
+        redirect: '/dashboard/ventas/facturas',
+      },
+      {
         path: 'ventas/cotizaciones',
         name: 'Cotizaciones',
         component: CotizacionesView,
@@ -119,7 +129,17 @@ const routes = [
         component: ClientesView,
         meta: { requierePermiso: 'ventas.ver' },
       },
+      {
+        path: 'ventas/:id',
+        name: 'DocumentoVentaDetalle',
+        component: DocumentoCompraDetalle,
+        meta: { requierePermiso: 'ventas.ver' },
+      },
       // Compras
+      {
+        path: 'compras',
+        redirect: '/dashboard/compras/compras',
+      },
       {
         path: 'compras/cotizaciones',
         name: 'CotizacionesCompra',
@@ -212,6 +232,12 @@ const routes = [
         component: SeriesView,
         meta: { requierePermiso: 'inventario.ver' },
       },
+      {
+        path: 'inventario/stock',
+        name: 'Stock',
+        component: StockView,
+        meta: { requierePermiso: 'inventario.ver' },
+      },
       // Contabilidad
       {
         path: 'contabilidad/cuentas',
@@ -229,6 +255,12 @@ const routes = [
         path: 'contabilidad/balanza',
         name: 'Balanza',
         component: BalanzaView,
+        meta: { requierePermiso: 'contabilidad.ver' },
+      },
+      {
+        path: 'contabilidad/libro-mayor',
+        name: 'LibroMayor',
+        component: LibroMayorView,
         meta: { requierePermiso: 'contabilidad.ver' },
       },
       // Fiscal
@@ -295,13 +327,43 @@ const routes = [
         component: AuditoriaView,
         meta: { requierePermiso: 'admin.configurar' },
       },
+      {
+        path: 'configuracion/empresa',
+        name: 'ConfiguracionEmpresa',
+        component: ConfiguracionEmpresaView,
+        meta: { requierePermiso: 'admin.configurar' },
+      },
+      {
+        path: 'configuracion/almacenes',
+        name: 'ConfiguracionAlmacenes',
+        component: ConfiguracionAlmacenesView,
+        meta: { requierePermiso: 'admin.configurar' },
+      },
+          {
+        path: 'configuracion/reportes',
+        name: 'GeneradorReportes',
+        component: GeneradorReportesView,
+        meta: { requierePermiso: 'reportes.ejecutar' },
+      },
+      {
+        path: 'configuracion/log-errores',
+        name: 'LogErrores',
+        component: ConfiguracionLogErroresView,
+        meta: { requierePermiso: 'admin.configurar' },
+      },
       // Ruta heredada (compatibilidad)
       {
         path: 'configuracion',
         redirect: '/dashboard/configuracion/catalogos',
       },
+      // Catch-all: redirigir rutas desconocidas del dashboard al inicio
+      {
+        path: ':pathMatch(.*)*',
+        redirect: '/dashboard',
+      },
     ],
   },
+
 
   // Ruta heredada (compatibilidad)
   {

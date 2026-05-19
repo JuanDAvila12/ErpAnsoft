@@ -78,7 +78,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import apiClient from '@/plugins/axios'
 
 const router = useRouter()
 
@@ -100,7 +100,7 @@ async function handleLogin() {
   errorMessage.value = ''
 
   try {
-    const response = await axios.post('/api/v1/auth/login', {
+    const response = await apiClient.post('/api/v1/auth/login', {
       email: email.value,
       password: password.value,
     })
@@ -112,11 +112,7 @@ async function handleLogin() {
 
     // Obtener perfil del usuario desde el endpoint protegido
     try {
-      const perfilResponse = await axios.get('/api/v1/auth/perfil', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
+      const perfilResponse = await apiClient.get('/api/v1/auth/perfil')
       const usuario = perfilResponse.data.datos
       localStorage.setItem('usuario', JSON.stringify(usuario))
     } catch (e) {

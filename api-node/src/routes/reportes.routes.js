@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { verificarToken } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const ReportesModel = require('../models/reportes.model');
 
 /**
@@ -8,7 +8,7 @@ const ReportesModel = require('../models/reportes.model');
  * Reporte de compras agrupadas por artículo.
  * Query params: fecha_desde, fecha_hasta, articulo_id
  */
-router.get('/compras-por-articulo', verificarToken, async (req, res) => {
+router.get('/compras-por-articulo', authMiddleware, async (req, res) => {
   try {
     const { fecha_desde, fecha_hasta, articulo_id } = req.query;
     const datos = await ReportesModel.comprasPorArticulo({
@@ -28,7 +28,7 @@ router.get('/compras-por-articulo', verificarToken, async (req, res) => {
  * Reporte de compras agrupadas por proveedor.
  * Query params: fecha_desde, fecha_hasta, proveedor_id
  */
-router.get('/compras-por-proveedor', verificarToken, async (req, res) => {
+router.get('/compras-por-proveedor', authMiddleware, async (req, res) => {
   try {
     const { fecha_desde, fecha_hasta, proveedor_id } = req.query;
     const datos = await ReportesModel.comprasPorProveedor({

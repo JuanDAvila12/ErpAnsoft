@@ -4,7 +4,7 @@
     <v-row class="mb-2">
       <v-col cols="12">
         <v-btn variant="text" prepend-icon="mdi-arrow-left" @click="volver">
-          Volver a {{ esOrden ? 'Órdenes de Compra' : 'Compras' }}
+          {{ textoBotonVolver }}
         </v-btn>
       </v-col>
     </v-row>
@@ -33,44 +33,48 @@
         <v-row>
           <v-col cols="12" md="6">
             <table class="info-table">
-              <tr>
-                <td class="text-caption text-medium-emphasis pr-4">Proveedor:</td>
-                <td class="font-weight-medium">{{ documento.proveedor_nombre || '—' }}</td>
-              </tr>
-              <tr>
-                <td class="text-caption text-medium-emphasis pr-4">RFC:</td>
-                <td>{{ documento.proveedor_rfc || '—' }}</td>
-              </tr>
-              <tr>
-                <td class="text-caption text-medium-emphasis pr-4">Fecha:</td>
-                <td>{{ new Date(documento.fecha).toLocaleString('es-MX') }}</td>
-              </tr>
-              <tr>
-                <td class="text-caption text-medium-emphasis pr-4">Serie:</td>
-                <td>{{ documento.serie || '—' }}</td>
-              </tr>
+              <tbody>
+                <tr>
+                  <td class="text-caption text-medium-emphasis pr-4">Proveedor:</td>
+                  <td class="font-weight-medium">{{ documento.proveedor_nombre || '—' }}</td>
+                </tr>
+                <tr>
+                  <td class="text-caption text-medium-emphasis pr-4">RFC:</td>
+                  <td>{{ documento.proveedor_rfc || '—' }}</td>
+                </tr>
+                <tr>
+                  <td class="text-caption text-medium-emphasis pr-4">Fecha:</td>
+                  <td>{{ new Date(documento.fecha).toLocaleString('es-MX') }}</td>
+                </tr>
+                <tr>
+                  <td class="text-caption text-medium-emphasis pr-4">Serie:</td>
+                  <td>{{ documento.serie || '—' }}</td>
+                </tr>
+              </tbody>
             </table>
           </v-col>
           <v-col cols="12" md="6">
             <table class="info-table">
-              <tr>
-                <td class="text-caption text-medium-emphasis pr-4">Total:</td>
-                <td class="text-h6 font-weight-bold text-success">
-                  ${{ Number(documento.total).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
-                </td>
-              </tr>
-              <tr>
-                <td class="text-caption text-medium-emphasis pr-4">Método Pago:</td>
-                <td>{{ documento.metodo_pago || '—' }}</td>
-              </tr>
-              <tr>
-                <td class="text-caption text-medium-emphasis pr-4">Almacén ID:</td>
-                <td>{{ documento.almacen_id || '—' }}</td>
-              </tr>
-              <tr v-if="documento.fecha_vencimiento">
-                <td class="text-caption text-medium-emphasis pr-4">Vencimiento:</td>
-                <td>{{ new Date(documento.fecha_vencimiento).toLocaleDateString('es-MX') }}</td>
-              </tr>
+              <tbody>
+                <tr>
+                  <td class="text-caption text-medium-emphasis pr-4">Total:</td>
+                  <td class="text-h6 font-weight-bold text-success">
+                    ${{ Number(documento.total).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
+                  </td>
+                </tr>
+                <tr>
+                  <td class="text-caption text-medium-emphasis pr-4">Método Pago:</td>
+                  <td>{{ documento.metodo_pago || '—' }}</td>
+                </tr>
+                <tr>
+                  <td class="text-caption text-medium-emphasis pr-4">Almacén ID:</td>
+                  <td>{{ documento.almacen_id || '—' }}</td>
+                </tr>
+                <tr v-if="documento.fecha_vencimiento">
+                  <td class="text-caption text-medium-emphasis pr-4">Vencimiento:</td>
+                  <td>{{ new Date(documento.fecha_vencimiento).toLocaleDateString('es-MX') }}</td>
+                </tr>
+              </tbody>
             </table>
           </v-col>
         </v-row>
@@ -292,7 +296,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import axios from 'axios'
+import apiClient from '@/plugins/axios'
 
 const route = useRoute()
 const router = useRouter()
@@ -316,6 +320,36 @@ const detalleColumnas = [
 ]
 
 const esOrden = computed(() => documento.value?.tipo === 'orden_compra')
+const esVenta = computed(() => ['venta', 'orden_venta', 'cotizacion'].includes(documento.value?.tipo))
+const esCompra = computed(() => ['compra', 'orden_compra', 'cotizacion_compra', 'recepcion_compra'].includes(documento.value?.tipo))
+
+// Mapa de textos para el botón volver según el tipo de transacción
+const mapTextoVolver = {
+  cotizacion_compra: 'Volver a Cotizaciones de Compra',
+  orden_compra: 'Volver a Órdenes de Compra',
+  compra: 'Volver a Compras',
+  recepcion_compra: 'Volver a Recepciones',
+  cotizacion: 'Volver a Cotizaciones de Venta',
+  orden_venta: 'Volver a Órdenes de Venta',
+  venta: 'Volver a Facturas de Venta',
+}
+
+// Mapa de rutas para volver según el tipo de transacción
+const mapRutaVolver = {
+  cotizacion_compra: '/dashboard/compras/cotizaciones',
+  orden_compra: '/dashboard/compras/ordenes',
+  compra: '/dashboard/compras/compras',
+  recepcion_compra: '/dashboard/compras/recepciones',
+  cotizacion: '/dashboard/ventas/cotizaciones',
+  orden_venta: '/dashboard/ventas/ordenes',
+  venta: '/dashboard/ventas/facturas',
+}
+
+const textoBotonVolver = computed(() => {
+  if (!documento.value) return 'Volver'
+  const tipo = documento.value.tipo
+  return mapTextoVolver[tipo] || 'Volver'
+})
 
 function obtenerColorOperacion(tipo) {
   switch (tipo) {
@@ -342,10 +376,7 @@ async function cargarDocumento() {
   cargando.value = true
   loadingDetalle.value = true
   try {
-    const token = localStorage.getItem('token')
-    const res = await axios.get(`/api/v1/transacciones/${id}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    const res = await apiClient.get(`/api/v1/transacciones/${id}`)
     documento.value = res.data
   } catch (err) {
     console.error('Error al cargar documento:', err)
@@ -362,10 +393,7 @@ async function cargarHistorial() {
 
   cargandoHistorial.value = true
   try {
-    const token = localStorage.getItem('token')
-    const res = await axios.get(`/api/v1/documentos-compra/${id}/historial`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    const res = await apiClient.get(`/api/v1/transacciones/${id}/historial`)
     historial.value = res.data || []
   } catch (err) {
     console.error('Error al cargar historial:', err)
@@ -378,11 +406,9 @@ async function convertirACompra() {
   if (!documento.value) return
   convirtiendo.value = true
   try {
-    const token = localStorage.getItem('token')
-    await axios.post(
+    await apiClient.post(
       `/api/v1/transacciones/convertir/${documento.value.id}`,
-      { nuevo_tipo: 'compra' },
-      { headers: { Authorization: `Bearer ${token}` } }
+      { nuevo_tipo: 'compra' }
     )
     snackbar.value = { show: true, text: 'Documento convertido a compra exitosamente', color: 'success' }
     await cargarDocumento()
@@ -403,11 +429,9 @@ async function ejecutarCancelacion() {
   if (!documento.value) return
   cancelando.value = true
   try {
-    const token = localStorage.getItem('token')
-    await axios.post(
+    await apiClient.post(
       `/api/v1/transacciones/${documento.value.id}/cancelar`,
-      {},
-      { headers: { Authorization: `Bearer ${token}` } }
+      {}
     )
     dialogoCancelar.value = false
     snackbar.value = { show: true, text: 'Documento cancelado exitosamente', color: 'success' }
@@ -422,10 +446,17 @@ async function ejecutarCancelacion() {
 }
 
 function volver() {
-  if (documento.value?.tipo === 'orden_compra') {
-    router.push('/dashboard/compras/ordenes')
+  if (!documento.value) {
+    router.push('/dashboard')
+    return
+  }
+
+  const tipo = documento.value.tipo
+  const ruta = mapRutaVolver[tipo]
+  if (ruta) {
+    router.push(ruta)
   } else {
-    router.push('/dashboard/compras/compras')
+    router.push('/dashboard')
   }
 }
 

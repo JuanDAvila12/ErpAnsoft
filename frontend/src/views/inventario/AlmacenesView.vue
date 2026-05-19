@@ -17,8 +17,42 @@
       </v-col>
     </v-row>
 
+    <!-- Loader -->
+    <div v-if="loading" class="text-center pa-8">
+      <v-progress-circular indeterminate color="warning" size="48" width="4" />
+      <p class="text-body-1 text-medium-emphasis mt-4">Cargando almacenes...</p>
+    </div>
+
+    <!-- Error -->
+    <v-alert
+      v-else-if="errorMsg"
+      type="error"
+      variant="tonal"
+      closable
+      class="mb-4"
+      @click:close="errorMsg = ''"
+    >
+      <template v-slot:title>Error al cargar almacenes</template>
+      {{ errorMsg }}
+      <template v-slot:append>
+        <v-btn variant="text" color="error" @click="cargarDatos()">
+          <v-icon left>mdi-refresh</v-icon> Reintentar
+        </v-btn>
+      </template>
+    </v-alert>
+
+    <!-- Empty state -->
+    <v-card v-else-if="almacenes.length === 0" variant="outlined" class="text-center pa-8">
+      <v-icon size="64" color="grey-lighten-1" class="mb-4">mdi-warehouse-outline</v-icon>
+      <h3 class="text-h6 text-medium-emphasis">No se encontraron almacenes</h3>
+      <p class="text-body-2 text-medium-emphasis mt-1">No hay almacenes registrados en el sistema</p>
+      <v-btn color="warning" variant="tonal" prepend-icon="mdi-plus" class="mt-2" @click="abrirDialogo(null)">
+        Agregar primer almacén
+      </v-btn>
+    </v-card>
+
     <!-- Data Table -->
-    <v-card variant="outlined">
+    <v-card v-else variant="outlined">
       <v-data-table
         :headers="columnas"
         :items="almacenes"
@@ -107,6 +141,7 @@ import { ref, onMounted } from 'vue'
 import axios from 'axios'
 
 const loading = ref(false)
+const errorMsg = ref('')
 const guardando = ref(false)
 const almacenes = ref([])
 const dialogoVisible = ref(false)
@@ -130,15 +165,18 @@ const formData = ref({
 
 async function cargarDatos() {
   loading.value = true
+  errorMsg.value = ''
   try {
     const token = localStorage.getItem('token')
-    const res = await axios.get('/api/v1/inventario/almacenes', {
+    const res = await axios.get('/api/v1/almacenes', {
       headers: { Authorization: `Bearer ${token}` }
     })
     almacenes.value = res.data?.datos || res.data || []
+    if (!Array.isArray(almacenes.value)) almacenes.value = []
   } catch (err) {
     console.error('Error al cargar almacenes:', err)
-    snackbar.value = { show: true, text: 'Error al cargar almacenes', color: 'error' }
+    errorMsg.value = err.response?.data?.error || err.message || 'Error al cargar almacenes'
+    almacenes.value = []
   } finally {
     loading.value = false
   }

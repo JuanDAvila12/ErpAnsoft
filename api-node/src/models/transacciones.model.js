@@ -192,6 +192,38 @@ const TransaccionesModel = {
       }
 
       // ============================================
+      // VALIDACIÓN DE STOCK (para venta y salida_inventario)
+      // ============================================
+      if (tipo === 'venta' || tipo === 'salida_inventario') {
+        const almacenId = almacen_id || 1;
+        for (const art of articulos) {
+          const stockResult = await client.query(
+            `SELECT COALESCE(
+               SUM(cantidad) FILTER (WHERE tipo_movimiento = 'entrada'), 0
+             ) - COALESCE(
+               SUM(cantidad) FILTER (WHERE tipo_movimiento = 'salida'), 0
+             ) AS stock_actual
+             FROM inventario_movimientos WHERE articulo_id = $1 AND almacen_id = $2`,
+            [art.articulo_id, almacenId]
+          );
+          const stockActual = parseFloat(stockResult.rows[0].stock_actual) || 0;
+          const cantidadSolicitada = parseFloat(art.cantidad) || 0;
+
+          if (cantidadSolicitada > stockActual) {
+            // Obtener nombre del artículo para mensaje descriptivo
+            const artNombre = await client.query(
+              'SELECT nombre FROM articulos WHERE id = $1', [art.articulo_id]
+            );
+            const nombreArt = artNombre.rows[0]?.nombre || `ID ${art.articulo_id}`;
+            throw new Error(
+              `Stock insuficiente para "${nombreArt}". ` +
+              `Disponible: ${stockActual}, Solicitado: ${cantidadSolicitada}`
+            );
+          }
+        }
+      }
+
+      // ============================================
       // SERIE
       // ============================================
       let serie = serie_id;
@@ -266,13 +298,13 @@ const TransaccionesModel = {
         `INSERT INTO transacciones
          (tipo, estado, folio, total, moneda_id,
           entidad_cliente_id, entidad_proveedor_id, entidad_vendedor_id,
-          almacen_id, metodo_pago, forma_pago_id, terminos_pago_id,
+          almacen_id, almacen_destino_id, metodo_pago, forma_pago_id, terminos_pago_id,
           serie_id, fecha_vencimiento, comentario, documento_origen_id)
-         VALUES ($1, 'confirmado', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         VALUES ($1, 'confirmado', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          RETURNING *`,
         [tipo, folio, total, moneda_id || 1,
          entidad_cliente_id || null, entidad_proveedor_id || null, entidad_vendedor_id || null,
-         almacen_id || null, metodo_pago || 'efectivo', forma_pago_id || null,
+         almacen_id || null, almacen_destino_id || null, metodo_pago || 'efectivo', forma_pago_id || null,
          terminos_pago_id || null, serie, fecha_vencimiento || null, comentario || null,
          documento_origen_id || null]
       );
@@ -713,6 +745,12 @@ const TransaccionesModel = {
         await this._generarAsientosContables(client, nuevoTipo, nuevaTransaccion, nuevosDetalles);
       }
 
+      // Actualizar estado del documento origen a 'convertido'
+      await client.query(
+        "UPDATE transacciones SET estado = 'convertido', updated_at = NOW() WHERE id = $1",
+        [origenId]
+      );
+
       await client.query('COMMIT');
 
       return await this.findById(nuevaTransaccion.id);
@@ -863,6 +901,8 @@ const TransaccionesModel = {
               ep.razon_social AS proveedor_nombre,
               ep.rfc AS proveedor_rfc,
               ev.razon_social AS vendedor_nombre,
+              ao.nombre AS almacen_origen_nombre,
+              ad.nombre AS almacen_destino_nombre,
               sd.serie,
               COALESCE(
                 (SELECT json_agg(json_build_object(
@@ -884,9 +924,12 @@ const TransaccionesModel = {
        LEFT JOIN entidades ec ON ec.id = t.entidad_cliente_id
        LEFT JOIN entidades ep ON ep.id = t.entidad_proveedor_id
        LEFT JOIN entidades ev ON ev.id = t.entidad_vendedor_id
+       LEFT JOIN almacenes ao ON ao.id = t.almacen_id
+       LEFT JOIN almacenes ad ON ad.id = t.almacen_destino_id
        LEFT JOIN series_documentos sd ON sd.id = t.serie_id
        ${where}
-       ORDER BY t.fecha DESC`
+       ORDER BY t.fecha DESC`,
+      params
     );
     return result.rows;
   },
@@ -913,6 +956,7 @@ const TransaccionesModel = {
               tp.dias_credito,
               m.codigo AS moneda_codigo,
               a.nombre AS almacen_nombre,
+              ad.nombre AS almacen_destino_nombre,
               -- Detalles con series
               COALESCE(
                 (SELECT json_agg(json_build_object(
@@ -979,6 +1023,7 @@ const TransaccionesModel = {
        LEFT JOIN terminos_pago tp ON tp.id = t.terminos_pago_id
        LEFT JOIN monedas m ON m.id = t.moneda_id
        LEFT JOIN almacenes a ON a.id = t.almacen_id
+       LEFT JOIN almacenes ad ON ad.id = t.almacen_destino_id
        WHERE t.id = $1`,
       [id]
     );

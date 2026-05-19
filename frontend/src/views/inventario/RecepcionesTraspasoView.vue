@@ -15,7 +15,34 @@
       </v-col>
     </v-row>
 
-    <v-card variant="outlined">
+    <!-- Loader -->
+    <div v-if="loading" class="text-center pa-8">
+      <v-progress-circular indeterminate color="warning" size="48" width="4" />
+      <p class="text-body-1 text-medium-emphasis mt-4">Cargando recepciones de traspaso...</p>
+    </div>
+
+    <!-- Error -->
+    <v-alert v-else-if="errorMsg" type="error" variant="tonal" closable class="mb-4" @click:close="errorMsg = ''">
+      <template v-slot:title>Error al cargar recepciones</template>
+      {{ errorMsg }}
+      <template v-slot:append>
+        <v-btn variant="text" color="error" @click="cargarDatos()">
+          <v-icon left>mdi-refresh</v-icon> Reintentar
+        </v-btn>
+      </template>
+    </v-alert>
+
+    <!-- Empty state -->
+    <v-card v-else-if="documentos.length === 0" variant="outlined" class="text-center pa-8">
+      <v-icon size="64" color="grey-lighten-1" class="mb-4">mdi-package-down</v-icon>
+      <h3 class="text-h6 text-medium-emphasis">No se encontraron recepciones de traspaso</h3>
+      <p class="text-body-2 text-medium-emphasis mt-1">No hay recepciones de traspaso registradas</p>
+      <v-btn color="warning" variant="tonal" prepend-icon="mdi-plus-circle" class="mt-2" @click="abrirDialogoNuevo()">
+        Registrar primera recepción
+      </v-btn>
+    </v-card>
+
+    <v-card v-else variant="outlined">
       <v-data-table :headers="columnas" :items="documentos" :loading="loading" loading-text="Cargando recepciones..." :items-per-page="20" class="elevation-0">
         <template v-slot:item.folio="{ item }"><strong>{{ item.folio }}</strong></template>
         <template v-slot:item.traspaso_origen="{ item }">{{ item.traspaso_origen_folio || '—' }}</template>
@@ -74,6 +101,7 @@ import axios from 'axios'
 
 const route = useRoute()
 const loading = ref(false)
+const errorMsg = ref('')
 const guardando = ref(false)
 const documentos = ref([])
 const almacenes = ref([])
@@ -109,12 +137,17 @@ async function buscarArticulos(query) {
 
 async function cargarDatos() {
   loading.value = true
+  errorMsg.value = ''
   try {
     const token = localStorage.getItem('token')
     const res = await axios.get('/api/v1/transacciones', { headers: { Authorization: `Bearer ${token}` }, params: { tipo: 'recepcion_traspaso' } })
     documentos.value = res.data?.datos || res.data || []
-  } catch (err) { console.error(err); snackbar.value = { show: true, text: 'Error al cargar', color: 'error' } }
-  finally { loading.value = false }
+    if (!Array.isArray(documentos.value)) documentos.value = []
+  } catch (err) {
+    console.error('Error al cargar recepciones:', err)
+    errorMsg.value = err.response?.data?.error || err.message || 'Error al cargar recepciones'
+    documentos.value = []
+  } finally { loading.value = false }
 }
 
 async function cargarCatalogos() {

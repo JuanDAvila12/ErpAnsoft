@@ -1,509 +1,193 @@
 <template>
-  <v-container fluid>
-    <!-- Header -->
-    <v-row class="mb-4">
-      <v-col cols="12" md="8">
-        <div class="d-flex align-center">
-          <v-icon size="36" color="success" class="mr-3">mdi-package-down</v-icon>
-          <div>
-            <h2 class="text-h5 font-weight-bold mb-0">Compras</h2>
-            <p class="text-body-2 text-medium-emphasis mt-0 mb-0">Gestión de compras y recepción de mercancía</p>
-          </div>
-        </div>
-      </v-col>
-      <v-col cols="12" md="4" class="text-right d-flex align-center justify-end">
-        <v-btn color="success" variant="elevated" prepend-icon="mdi-plus-circle" @click="abrirDialogoNuevo()">
-          Nueva Compra
-        </v-btn>
-      </v-col>
-    </v-row>
-
-    <!-- Filtros -->
-    <v-card class="mb-4" variant="outlined">
-      <v-card-text>
-        <v-row align="center">
-          <v-col cols="12" sm="3" md="2">
-            <v-text-field
-              v-model="filtros.estado"
-              label="Estado"
-              placeholder="confirmado, cancelado..."
-              variant="outlined"
-              density="compact"
-              hide-details
-            />
-          </v-col>
-          <v-col cols="12" sm="3" md="2">
-            <v-text-field
-              v-model="filtros.proveedor"
-              label="ID Proveedor"
-              placeholder="Filtrar por ID"
-              variant="outlined"
-              density="compact"
-              hide-details
-            />
-          </v-col>
-          <v-col cols="12" sm="6" md="4">
-            <v-btn variant="outlined" prepend-icon="mdi-filter" @click="cargarDatos()" class="mr-2">
-              Filtrar
-            </v-btn>
-            <v-btn variant="text" prepend-icon="mdi-refresh" @click="limpiarFiltros()">
-              Limpiar
-            </v-btn>
-          </v-col>
-        </v-row>
-      </v-card-text>
+  <div>
+    <div class="d-flex align-center mb-4">
+      <v-icon color="purple" size="36" class="mr-3">mdi-file-invoice</v-icon>
+      <h2 class="text-h4 font-weight-bold mb-0">Compras / Facturas</h2>
+      <v-spacer />
+      <v-btn color="primary" prepend-icon="mdi-plus" @click="abrirDialogoNuevo">Nueva Compra</v-btn>
+    </div>
+    <v-card variant="tonal" class="pa-4 mb-4">
+      <v-row>
+        <v-col cols="12" sm="4"><v-select v-model="filtroEstado" :items="estados" label="Estado" clearable variant="outlined" density="compact" /></v-col>
+        <v-col cols="12" sm="4"><v-text-field v-model="filtroFechaDesde" label="Fecha desde" type="date" variant="outlined" density="compact" /></v-col>
+        <v-col cols="12" sm="4"><v-text-field v-model="filtroFechaHasta" label="Fecha hasta" type="date" variant="outlined" density="compact" /></v-col>
+      </v-row>
     </v-card>
 
-    <!-- Data Table -->
-    <v-card variant="outlined">
-      <v-data-table
-        :headers="columnas"
-        :items="documentos"
-        :loading="loading"
-        loading-text="Cargando compras..."
-        :items-per-page="20"
-        class="elevation-0"
-        @click:row="irADetalle"
-      >
-        <template v-slot:item.folio="{ item }">
-          <strong>{{ item.folio }}</strong>
-        </template>
-        <template v-slot:item.proveedor_nombre="{ item }">
-          {{ item.proveedor_nombre || '—' }}
-        </template>
-        <template v-slot:item.origen="{ item }">
-          <span v-if="item.documento_origen_id" class="text-caption">
-            <v-icon size="small" class="mr-1">mdi-arrow-decision</v-icon>
-            Desde OC #{{ item.documento_origen_id }}
-          </span>
-          <span v-else class="text-medium-emphasis">—</span>
-        </template>
-        <template v-slot:item.total="{ item }">
-          ${{ Number(item.total).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
-        </template>
-        <template v-slot:item.fecha="{ item }">
-          {{ new Date(item.fecha).toLocaleDateString('es-MX') }}
-        </template>
-        <template v-slot:item.estado="{ item }">
-          <v-chip
-            :color="item.estado === 'confirmado' ? 'success' : item.estado === 'cancelado' ? 'error' : 'warning'"
-            size="small"
-            variant="tonal"
-          >
-            {{ item.estado }}
-          </v-chip>
-        </template>
-        <template v-slot:item.acciones="{ item }">
-          <v-btn icon size="small" variant="text" color="primary" @click.stop="irADetalle(item)">
-            <v-icon>mdi-eye</v-icon>
-            <v-tooltip activator="parent" location="bottom">Ver detalle</v-tooltip>
-          </v-btn>
-          <v-btn
-            v-if="item.estado === 'confirmado'"
-            icon size="small" variant="text" color="error"
-            @click.stop="confirmarCancelar(item)"
-          >
-            <v-icon>mdi-cancel</v-icon>
-            <v-tooltip activator="parent" location="bottom">Cancelar</v-tooltip>
-          </v-btn>
-        </template>
-      </v-data-table>
+    <!-- Error Alert -->
+    <v-alert v-if="errorMsg" type="error" variant="tonal" closable class="mb-4" @click:close="errorMsg = ''">
+      {{ errorMsg }}
+    </v-alert>
+
+    <!-- Mensaje cuando no hay datos -->
+    <v-card v-if="!loading && compras.length === 0" variant="tonal" class="pa-8 text-center">
+      <v-icon size="64" color="grey-lighten-1" class="mb-4">mdi-file-invoice-off</v-icon>
+      <h3 class="text-h6 text-medium-emphasis">No se encontraron documentos</h3>
+      <p class="text-body-2 text-medium-emphasis mt-1">No hay compras registradas.</p>
     </v-card>
 
-    <!-- Diálogo Nueva Compra -->
-    <v-dialog v-model="dialogoNuevo" max-width="800px" persistent scrollable>
-      <v-card>
-        <v-card-title class="text-h5 bg-success text-white pa-4">
-          <v-icon class="mr-2">mdi-plus-circle</v-icon>
-          Nueva Compra Directa
-        </v-card-title>
-        <v-card-text class="pa-4">
-          <v-form ref="formNuevo">
-            <v-row>
-              <v-col cols="12" md="6">
-                <v-autocomplete
-                  v-model="nuevoDocumento.proveedor_entidad_id"
-                  :items="proveedores"
-                  item-title="razon_social"
-                  item-value="id"
-                  label="Proveedor *"
-                  variant="outlined"
-                  density="compact"
-                  :loading="buscandoProveedores"
-                  @update:search="buscarProveedores"
-                  required
-                  clearable
-                >
-                  <template v-slot:item="{ props, item }">
-                    <v-list-item v-bind="props" :subtitle="item.raw.rfc" />
-                  </template>
-                </v-autocomplete>
-              </v-col>
-              <v-col cols="12" md="6">
-                <v-select
-                  v-model="nuevoDocumento.almacen_id"
-                  :items="almacenes"
-                  item-title="nombre"
-                  item-value="id"
-                  label="Almacén *"
-                  variant="outlined"
-                  density="compact"
-                  clearable
-                />
-              </v-col>
-            </v-row>
-            <v-row>
-              <v-col cols="12" md="6">
-                <v-select
-                  v-model="nuevoDocumento.metodo_pago"
-                  :items="metodosPago"
-                  label="Método de Pago"
-                  variant="outlined"
-                  density="compact"
-                  clearable
-                />
-              </v-col>
-              <v-col cols="12" md="6">
-                <v-select
-                  v-model="nuevoDocumento.terminos_pago_id"
-                  :items="terminosPago"
-                  item-title="nombre"
-                  item-value="id"
-                  label="Términos de Pago"
-                  variant="outlined"
-                  density="compact"
-                  clearable
-                />
-              </v-col>
-            </v-row>
-
-            <v-divider class="my-3" />
-
-            <h4 class="text-subtitle-1 font-weight-bold mb-2">Artículos</h4>
-            <v-row v-for="(art, idx) in nuevoDocumento.articulos" :key="idx" class="mb-2" align="center">
-              <v-col cols="5">
-                <v-autocomplete
-                  v-model="art.articulo_id"
-                  :items="articulos"
-                  item-title="nombre"
-                  item-value="id"
-                  label="Artículo *"
-                  variant="outlined"
-                  density="compact"
-                  :loading="buscandoArticulos"
-                  @update:search="buscarArticulos"
-                  hide-details
-                  clearable
-                >
-                  <template v-slot:item="{ props, item }">
-                    <v-list-item v-bind="props" :subtitle="`SKU: ${item.raw.sku} | Costo actual: $${Number(item.raw.costo_promedio).toFixed(2)}`" />
-                  </template>
-                </v-autocomplete>
-              </v-col>
-              <v-col cols="2">
-                <v-text-field
-                  v-model.number="art.cantidad"
-                  label="Cant."
-                  type="number"
-                  variant="outlined"
-                  density="compact"
-                  min="0"
-                  step="0.01"
-                  hide-details
-                />
-              </v-col>
-              <v-col cols="3">
-                <v-text-field
-                  v-model.number="art.precio_unitario"
-                  label="Precio Compra"
-                  type="number"
-                  variant="outlined"
-                  density="compact"
-                  min="0"
-                  step="0.01"
-                  hide-details
-                  suffix="$"
-                />
-              </v-col>
-              <v-col cols="1" class="text-center">
-                <v-btn icon size="small" color="error" variant="text" @click="eliminarArticulo(idx)">
-                  <v-icon>mdi-close-circle</v-icon>
-                </v-btn>
-              </v-col>
-            </v-row>
-
-            <v-btn variant="outlined" size="small" prepend-icon="mdi-plus" @click="agregarArticulo" class="mt-2">
-              Agregar Artículo
-            </v-btn>
-
-            <v-divider class="my-3" />
-
-            <v-row>
-              <v-col cols="12" class="text-right">
-                <h3 class="text-h6 font-weight-bold">
-                  Total: ${{ calcularTotal().toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
-                </h3>
-              </v-col>
-            </v-row>
-          </v-form>
-        </v-card-text>
-        <v-card-actions class="pa-4 pt-0">
-          <v-spacer />
-          <v-btn variant="outlined" @click="dialogoNuevo = false">Cancelar</v-btn>
-          <v-btn color="success" prepend-icon="mdi-content-save" :loading="guardando" @click="guardarNuevo">
-            Guardar y Entrar Mercancía
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- Diálogo de confirmación de cancelación -->
-    <v-dialog v-model="dialogoCancelar" max-width="400px">
-      <v-card>
-        <v-card-title class="text-h5 bg-error text-white pa-4">
-          <v-icon class="mr-2">mdi-alert-circle</v-icon>
-          Confirmar Cancelación
-        </v-card-title>
-        <v-card-text class="pa-4">
-          <p>¿Estás seguro de cancelar la compra <strong>{{ documentoACancelar?.folio }}</strong>?</p>
-          <p class="text-caption text-medium-emphasis">Se revertirá el inventario asociado.</p>
-        </v-card-text>
-        <v-card-actions class="pa-4 pt-0">
-          <v-spacer />
-          <v-btn variant="outlined" @click="dialogoCancelar = false">No</v-btn>
-          <v-btn color="error" :loading="cancelando" @click="cancelarDocumento">Sí, Cancelar</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
-
-    <!-- Snackbar -->
-    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="3000">
-      {{ snackbar.text }}
-      <template v-slot:actions>
-        <v-btn variant="text" @click="snackbar.show = false">Cerrar</v-btn>
+    <v-data-table v-else :headers="headers" :items="compras" :loading="loading" :items-per-page="15" class="elevation-1">
+      <template v-slot:item.total="{ item }">${{ (item.total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</template>
+      <template v-slot:item.estado="{ item }"><v-chip :color="item.estado === 'confirmado' ? 'success' : 'error'" size="small">{{ item.estado }}</v-chip></template>
+      <template v-slot:item.fecha="{ item }">{{ new Date(item.fecha).toLocaleDateString('es-MX') }}</template>
+      <template v-slot:item.acciones="{ item }">
+        <v-btn icon="mdi-eye" size="small" variant="text" @click="verDetalle(item)" />
+        <v-btn icon="mdi-cancel" size="small" variant="text" color="error" @click="confirmarCancelar(item)" v-if="item.estado !== 'cancelado'" />
       </template>
-    </v-snackbar>
-  </v-container>
+    </v-data-table>
+
+    <v-dialog v-model="dialogoNuevo" max-width="800" persistent>
+      <v-card>
+        <v-card-title class="text-h5">Nueva Compra</v-card-title>
+        <v-card-text>
+          <!-- Loading state for catalog data -->
+          <v-progress-linear v-if="cargandoCatalogos" indeterminate color="primary" class="mb-3"></v-progress-linear>
+
+          <!-- Error loading catalogs -->
+          <v-alert v-if="errorCatalogos" type="error" variant="tonal" closable class="mb-3" @click:close="errorCatalogos = ''">
+            {{ errorCatalogos }}
+          </v-alert>
+
+          <v-row>
+            <v-col cols="12" sm="6">
+              <v-autocomplete v-model="nuevoDocumento.proveedor_id" :items="proveedores" item-title="razon_social" item-value="id" label="Proveedor *" variant="outlined" :loading="cargandoCatalogos" :disabled="cargandoCatalogos" no-data-text="No se encontraron proveedores" />
+            </v-col>
+            <v-col cols="12" sm="6"><v-select v-model="nuevoDocumento.metodo_pago" :items="metodosPago" label="Método de pago" variant="outlined" /></v-col>
+            <v-col cols="12" sm="6"><v-select v-model="nuevoDocumento.almacen_id" :items="almacenes" item-title="nombre" item-value="id" label="Almacén" variant="outlined" /></v-col>
+          </v-row>
+          <v-divider class="my-3" />
+          <h4 class="text-h6 mb-2">Artículos</h4>
+          <v-row v-for="(linea, i) in nuevoDocumento.articulos" :key="i" class="mb-2" align="center">
+            <v-col cols="5">
+              <v-autocomplete v-model="linea.articulo_id" :items="articulos" item-title="nombre" item-value="id" label="Artículo" variant="outlined" density="compact" return-object :loading="cargandoCatalogos" :disabled="cargandoCatalogos" no-data-text="No se encontraron artículos" @update:model-value="sel => { if(sel) { linea.precio_unitario = sel.costo_promedio } }" />
+            </v-col>
+            <v-col cols="2"><v-text-field v-model="linea.cantidad" label="Cant." type="number" min="1" variant="outlined" density="compact" /></v-col>
+            <v-col cols="3"><v-text-field v-model="linea.precio_unitario" label="Costo" type="number" prefix="$" variant="outlined" density="compact" /></v-col>
+            <v-col cols="2" class="text-right"><v-btn icon="mdi-delete" size="small" color="error" variant="text" @click="nuevoDocumento.articulos.splice(i, 1)" /></v-col>
+          </v-row>
+          <v-btn variant="tonal" prepend-icon="mdi-plus" @click="agregarLinea" :disabled="cargandoCatalogos">Agregar artículo</v-btn>
+          <v-divider class="my-3" />
+          <div class="text-h5 text-right font-weight-bold">Total: ${{ calcularTotal().toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}</div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer /><v-btn variant="text" @click="cerrarDialogoNuevo">Cancelar</v-btn>
+          <v-btn color="success" :loading="guardando" @click="guardar" :disabled="!puedeGuardar || cargandoCatalogos">Crear Compra</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="dialogoConfirmar" max-width="400">
+      <v-card><v-card-title class="text-h5">Confirmar</v-card-title><v-card-text>{{ mensajeConfirmacion }}</v-card-text>
+        <v-card-actions><v-spacer /><v-btn variant="text" @click="dialogoConfirmar = false">Cancelar</v-btn><v-btn :color="accionConfirmarColor" @click="ejecutarAccion">{{ accionConfirmarTexto }}</v-btn></v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000">{{ snackbar.mensaje }}<template v-slot:actions><v-btn variant="text" @click="snackbar.show = false">Cerrar</v-btn></template></v-snackbar>
+  </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import apiClient from '@/plugins/axios'
 
 const router = useRouter()
-const loading = ref(false)
-const guardando = ref(false)
-const cancelando = ref(false)
-const documentos = ref([])
-const proveedores = ref([])
-const almacenes = ref([])
-const terminosPago = ref([])
-const articulos = ref([])
-const buscandoProveedores = ref(false)
-const buscandoArticulos = ref(false)
-const dialogoNuevo = ref(false)
-const dialogoCancelar = ref(false)
-const documentoACancelar = ref(null)
-
-const metodosPago = ['efectivo', 'transferencia', 'cheque', 'tarjeta_credito', 'tarjeta_debito']
-
-const filtros = ref({ estado: '', proveedor: '' })
-
-const snackbar = ref({ show: false, text: '', color: 'success' })
-
-const columnas = [
-  { title: 'Folio', key: 'folio', sortable: true },
-  { title: 'Proveedor', key: 'proveedor_nombre', sortable: true },
-  { title: 'Origen', key: 'origen', sortable: false },
-  { title: 'Fecha', key: 'fecha', sortable: true },
-  { title: 'Total', key: 'total', sortable: true, align: 'end' },
-  { title: 'Estado', key: 'estado', sortable: true },
-  { title: 'Acciones', key: 'acciones', sortable: false, align: 'center', width: '100px' },
+const loading = ref(false); const guardando = ref(false)
+const cargandoCatalogos = ref(false); const errorCatalogos = ref('')
+const compras = ref([]); const proveedores = ref([]); const articulos = ref([]); const almacenes = ref([])
+const dialogoNuevo = ref(false); const dialogoConfirmar = ref(false)
+const mensajeConfirmacion = ref(''); const accionConfirmarTexto = ref('Aceptar'); const accionConfirmarColor = ref('primary')
+let accionPendiente = null
+const filtroEstado = ref(null); const filtroFechaDesde = ref(''); const filtroFechaHasta = ref('')
+const estados = ['confirmado', 'cancelado']; const metodosPago = ['efectivo', 'transferencia', 'tarjeta_credito', 'tarjeta_debito']
+const snackbar = ref({ show: false, mensaje: '', color: 'success' })
+const errorMsg = ref('')
+const headers = [
+  { title: 'Folio', key: 'folio', sortable: true }, { title: 'Proveedor', key: 'proveedor_nombre', sortable: true },
+  { title: 'Fecha', key: 'fecha', sortable: true }, { title: 'Total', key: 'total', sortable: true },
+  { title: 'Estado', key: 'estado', sortable: true }, { title: 'Acciones', key: 'acciones', sortable: false },
 ]
+const nuevoDocumento = ref({ proveedor_id: null, metodo_pago: 'transferencia', almacen_id: null, articulos: [] })
 
-const nuevoDocumento = ref({
-  proveedor_entidad_id: null,
-  almacen_id: null,
-  metodo_pago: 'efectivo',
-  terminos_pago_id: null,
-  articulos: [{ articulo_id: null, cantidad: 1, precio_unitario: null }],
-})
+function agregarLinea() { nuevoDocumento.value.articulos.push({ articulo_id: null, cantidad: 1, precio_unitario: 0 }) }
+function calcularTotal() { return nuevoDocumento.value.articulos.reduce((s, l) => s + (parseFloat(l.cantidad||0) * parseFloat(l.precio_unitario||0)), 0) }
+const puedeGuardar = computed(() => nuevoDocumento.value.proveedor_id && nuevoDocumento.value.articulos.length > 0 && nuevoDocumento.value.articulos.every(l => l.articulo_id && l.cantidad > 0))
 
-function agregarArticulo() {
-  nuevoDocumento.value.articulos.push({ articulo_id: null, cantidad: 1, precio_unitario: null })
+function cerrarDialogoNuevo() {
+  dialogoNuevo.value = false
+  nuevoDocumento.value = { proveedor_id: null, metodo_pago: 'transferencia', almacen_id: null, articulos: [] }
+  errorCatalogos.value = ''
 }
 
-function eliminarArticulo(idx) {
-  if (nuevoDocumento.value.articulos.length > 1) {
-    nuevoDocumento.value.articulos.splice(idx, 1)
-  }
-}
-
-function calcularTotal() {
-  let total = 0
-  for (const art of nuevoDocumento.value.articulos) {
-    if (art.cantidad && art.precio_unitario) {
-      total += art.cantidad * art.precio_unitario
-    }
-  }
-  return total
-}
-
-async function buscarProveedores(query) {
-  if (!query || query.length < 2) return
-  buscandoProveedores.value = true
+async function abrirDialogoNuevo() {
+  dialogoNuevo.value = true
+  cargandoCatalogos.value = true
+  errorCatalogos.value = ''
   try {
-    const token = localStorage.getItem('token')
-    const res = await axios.get(`/api/v1/entidades?rol=proveedor&search=${encodeURIComponent(query)}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    proveedores.value = res.data.datos || []
-  } catch (err) {
-    console.error('Error al buscar proveedores:', err)
-  } finally {
-    buscandoProveedores.value = false
-  }
-}
-
-async function buscarArticulos(query) {
-  if (!query || query.length < 1) return
-  buscandoArticulos.value = true
-  try {
-    const token = localStorage.getItem('token')
-    const res = await axios.get(`/api/v1/articulos?search=${encodeURIComponent(query)}&limite=20`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    articulos.value = res.data.datos || []
-  } catch (err) {
-    console.error('Error al buscar artículos:', err)
-  } finally {
-    buscandoArticulos.value = false
-  }
-}
-
-async function cargarCatalogos() {
-  const token = localStorage.getItem('token')
-  try {
-    const [almRes, tpRes] = await Promise.all([
-      axios.get('/api/v1/inventario/almacenes', { headers: { Authorization: `Bearer ${token}` } }),
-      axios.get('/api/v1/catalogos/terminos-pago', { headers: { Authorization: `Bearer ${token}` } }),
+    const [p, a, al] = await Promise.all([
+      apiClient.get('/api/v1/entidades', { params: { rol: 'proveedor', limite: 200 } }),
+      apiClient.get('/api/v1/articulos', { params: { limite: 200 } }),
+      apiClient.get('/api/v1/inventario/almacenes'),
     ])
-    almacenes.value = almRes.data?.datos || almRes.data || []
-    terminosPago.value = tpRes.data?.datos || tpRes.data || []
+    proveedores.value = p.data.datos || []
+    articulos.value = a.data.datos || []
+    almacenes.value = al.data.datos || []
   } catch (err) {
     console.error('Error al cargar catálogos:', err)
+    errorCatalogos.value = err.response?.data?.error || 'Error al cargar datos. Verifique la conexión con el servidor.'
+    snackbar.value = { show: true, mensaje: 'Error al cargar catálogos', color: 'error' }
+  } finally {
+    cargandoCatalogos.value = false
   }
 }
 
 async function cargarDatos() {
   loading.value = true
+  errorMsg.value = ''
   try {
-    const token = localStorage.getItem('token')
     const params = { tipo: 'compra' }
-    if (filtros.value.estado) params.estado = filtros.value.estado
-    if (filtros.value.proveedor) params.proveedor = filtros.value.proveedor
-
-    const res = await axios.get('/api/v1/transacciones', {
-      headers: { Authorization: `Bearer ${token}` },
-      params,
-    })
-    documentos.value = res.data?.datos || res.data || []
+    if (filtroEstado.value) params.estado = filtroEstado.value
+    if (filtroFechaDesde.value) params.fecha_desde = filtroFechaDesde.value
+    if (filtroFechaHasta.value) params.fecha_hasta = filtroFechaHasta.value
+    const r = await apiClient.get('/api/v1/transacciones', { params })
+    compras.value = r.data || []
   } catch (err) {
     console.error('Error al cargar compras:', err)
-    snackbar.value = { show: true, text: 'Error al cargar compras', color: 'error' }
+    errorMsg.value = err.response?.data?.error || 'Error al cargar datos. Verifique la conexión con el servidor.'
+    snackbar.value = { show: true, mensaje: 'Error al cargar datos', color: 'error' }
   } finally {
     loading.value = false
   }
 }
 
-function limpiarFiltros() {
-  filtros.value = { estado: '', proveedor: '' }
-  cargarDatos()
-}
-
-function abrirDialogoNuevo() {
-  nuevoDocumento.value = {
-    proveedor_entidad_id: null,
-    almacen_id: null,
-    metodo_pago: 'efectivo',
-    terminos_pago_id: null,
-    articulos: [{ articulo_id: null, cantidad: 1, precio_unitario: null }],
-  }
-  dialogoNuevo.value = true
-}
-
-async function guardarNuevo() {
-  if (!nuevoDocumento.value.proveedor_entidad_id) {
-    snackbar.value = { show: true, text: 'Seleccione un proveedor', color: 'warning' }
-    return
-  }
-  if (!nuevoDocumento.value.articulos.length || !nuevoDocumento.value.articulos[0].articulo_id) {
-    snackbar.value = { show: true, text: 'Agregue al menos un artículo', color: 'warning' }
-    return
-  }
-
+async function guardar() {
   guardando.value = true
   try {
-    const token = localStorage.getItem('token')
-    const payload = {
-      tipo: 'compra',
-      proveedor_entidad_id: nuevoDocumento.value.proveedor_entidad_id,
-      almacen_id: nuevoDocumento.value.almacen_id,
-      metodo_pago: nuevoDocumento.value.metodo_pago,
-      terminos_pago_id: nuevoDocumento.value.terminos_pago_id,
-      articulos: nuevoDocumento.value.articulos.map(a => ({
-        articulo_id: a.articulo_id,
-        cantidad: a.cantidad,
-        precio_unitario: a.precio_unitario,
-      })),
-    }
-
-    await axios.post('/api/v1/transacciones', payload, {
-      headers: { Authorization: `Bearer ${token}` }
+    await apiClient.post('/api/v1/transacciones', {
+      tipo: 'compra', entidad_proveedor_id: nuevoDocumento.value.proveedor_id,
+      metodo_pago: nuevoDocumento.value.metodo_pago, almacen_id: nuevoDocumento.value.almacen_id,
+      articulos: nuevoDocumento.value.articulos.map(l => ({ articulo_id: l.articulo_id?.id||l.articulo_id, cantidad: parseFloat(l.cantidad), precio_unitario: parseFloat(l.precio_unitario) })),
     })
-
-    dialogoNuevo.value = false
-    snackbar.value = { show: true, text: 'Compra registrada exitosamente', color: 'success' }
+    snackbar.value = { show: true, mensaje: 'Compra creada', color: 'success' }
+    cerrarDialogoNuevo()
     await cargarDatos()
-  } catch (err) {
-    console.error('Error al crear compra:', err)
-    snackbar.value = { show: true, text: err.response?.data?.error || 'Error al registrar compra', color: 'error' }
-  } finally {
-    guardando.value = false
-  }
+  } catch (err) { snackbar.value = { show: true, mensaje: err.response?.data?.error || 'Error', color: 'error' } }
+  finally { guardando.value = false }
 }
 
-function irADetalle(item) {
-  router.push(`/dashboard/compras/${item.id}`)
-}
-
+function verDetalle(item) { router.push(`/dashboard/compras/${item.id}`) }
 function confirmarCancelar(item) {
-  documentoACancelar.value = item
-  dialogoCancelar.value = true
-}
-
-async function cancelarDocumento() {
-  if (!documentoACancelar.value) return
-  cancelando.value = true
-  try {
-    const token = localStorage.getItem('token')
-    await axios.post(`/api/v1/transacciones/${documentoACancelar.value.id}/cancelar`, {}, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    dialogoCancelar.value = false
-    snackbar.value = { show: true, text: 'Compra cancelada exitosamente', color: 'success' }
-    await cargarDatos()
-  } catch (err) {
-    console.error('Error al cancelar:', err)
-    snackbar.value = { show: true, text: err.response?.data?.error || 'Error al cancelar', color: 'error' }
-  } finally {
-    cancelando.value = false
+  mensajeConfirmacion.value = `¿Cancelar ${item.folio}? Se revertirá inventario.`
+  accionConfirmarTexto.value = 'Cancelar'; accionConfirmarColor.value = 'error'
+  accionPendiente = async () => {
+    try {
+      await apiClient.post(`/api/v1/transacciones/${item.id}/cancelar`)
+      snackbar.value = { show: true, mensaje: 'Cancelado', color: 'success' }; await cargarDatos()
+    } catch (err) { snackbar.value = { show: true, mensaje: err.response?.data?.error || 'Error', color: 'error' } }
   }
+  dialogoConfirmar.value = true
 }
+function ejecutarAccion() { if (accionPendiente) accionPendiente(); dialogoConfirmar.value = false }
 
-onMounted(() => {
-  cargarDatos()
-  cargarCatalogos()
-})
+onMounted(() => cargarDatos())
 </script>

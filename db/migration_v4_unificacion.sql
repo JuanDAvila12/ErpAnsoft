@@ -8,8 +8,6 @@
 -- Migra datos desde tablas legacy sin eliminarlas.
 -- ============================================================
 
-BEGIN;
-
 -- ============================================================
 -- BLOQUE 0: DEPENDENCIAS PREVIAS
 -- ============================================================
@@ -532,5 +530,3 @@ BEGIN
     RAISE NOTICE 'asientos_contables → transacciones_contables: %', v_contables_migradas;
     RAISE NOTICE '============================================';
 END $$;
-
-COMMIT;

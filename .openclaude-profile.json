@@ -1,0 +1,10 @@
+{
+  "profile": "openai",
+  "env": {
+    "OPENAI_BASE_URL": "https://api.deepseek.com/v1",
+    "OPENAI_MODEL": "deepseek-v4-flash",
+    "OPENAI_API_FORMAT": "chat_completions",
+    "OPENAI_API_KEY": "sk-001ff3dab9084415aa522f9b6195f3a8"
+  },
+  "createdAt": "2026-05-19T03:35:52.996Z"
+}

@@ -19,6 +19,14 @@ services:
       - ./db/init.sql:/docker-entrypoint-initdb.d/01_init.sql
       - ./db/migration_v3.sql:/docker-entrypoint-initdb.d/02_migration_v3.sql
       - ./db/migration_v4.sql:/docker-entrypoint-initdb.d/03_migration_v4.sql
+      - ./db/migration_v4_unificacion.sql:/docker-entrypoint-initdb.d/04_migration_v4_unificacion.sql
+      - ./db/migration_v5_expansion.sql:/docker-entrypoint-initdb.d/05_migration_v5_expansion.sql
+      - ./db/migration_v9_fix_convertir.sql:/docker-entrypoint-initdb.d/06_migration_v9_fix_convertir.sql
+      - ./db/migration_v10_log_errores.sql:/docker-entrypoint-initdb.d/07_migration_v10_log_errores.sql
+      - ./db/migration_v11_cuentas_contables.sql:/docker-entrypoint-initdb.d/08_migration_v11_cuentas_contables.sql
+      - ./db/migration_v11_cleanup.sql:/docker-entrypoint-initdb.d/09_migration_v11_cleanup.sql
+      - ./db/migration_v11_fix_tree.sql:/docker-entrypoint-initdb.d/10_migration_v11_fix_tree.sql
+      - ./db/migration_v12_fix_views.sql:/docker-entrypoint-initdb.d/11_migration_v12_fix_views.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U spi_user -d spi_erp"]
       interval: 10s

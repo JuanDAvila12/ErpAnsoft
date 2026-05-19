@@ -44,6 +44,17 @@
 
       <v-divider class="mx-3" />
 
+      <!-- Botón Inicio (Dashboard Home) -->
+      <v-list-item
+        prepend-icon="mdi-home"
+        title="Inicio"
+        color="primary"
+        :to="'/dashboard'"
+        class="mt-1 mb-1"
+      />
+
+      <v-divider class="mx-3" />
+
       <!-- Menú agrupado por módulos -->
       <v-list density="compact" nav>
         <!-- Ventas -->
@@ -51,26 +62,26 @@
           <template v-slot:activator="{ props }">
             <v-list-item v-bind="props" prepend-icon="mdi-cart-outline" title="Ventas" color="primary" />
           </template>
-          <v-list-item prepend-icon="mdi-file-document-outline" title="Cotizaciones" @click="irA('/dashboard/ventas/cotizaciones')" />
-          <v-list-item prepend-icon="mdi-receipt" title="Órdenes de Venta" @click="irA('/dashboard/ventas/ordenes')" />
-          <v-list-item prepend-icon="mdi-file-invoice" title="Facturas" @click="irA('/dashboard/ventas/facturas')" />
-          <v-list-item prepend-icon="mdi-account-group" title="Clientes" @click="irA('/dashboard/ventas/clientes')" />
+          <v-list-item prepend-icon="mdi-file-document-outline" title="Cotizaciones" :to="'/dashboard/ventas/cotizaciones'" />
+          <v-list-item prepend-icon="mdi-receipt" title="Órdenes de Venta" :to="'/dashboard/ventas/ordenes'" />
+          <v-list-item prepend-icon="mdi-file-invoice" title="Facturas" :to="'/dashboard/ventas/facturas'" />
+          <v-list-item prepend-icon="mdi-account-group" title="Clientes" :to="'/dashboard/ventas/clientes'" />
         </v-list-group>
 
         <!-- Entidades / Contactos -->
-        <v-list-item v-if="tienePermiso('compras.ver')" prepend-icon="mdi-account-multiple" title="Entidades (Clientes/Prov.)" color="primary" @click="irA('/dashboard/entidades')" />
+        <v-list-item v-if="tienePermiso('compras.ver')" prepend-icon="mdi-account-multiple" title="Entidades (Clientes/Prov.)" color="primary" :to="'/dashboard/entidades'" />
 
         <!-- Compras -->
         <v-list-group v-if="tienePermiso('compras.ver')" value="compras">
           <template v-slot:activator="{ props }">
             <v-list-item v-bind="props" prepend-icon="mdi-truck-delivery" title="Compras" color="success" />
           </template>
-          <v-list-item prepend-icon="mdi-file-document-outline" title="Cotizaciones" @click="irA('/dashboard/compras/cotizaciones')" />
-          <v-list-item prepend-icon="mdi-file-document" title="Órdenes de Compra" @click="irA('/dashboard/compras/ordenes')" />
-          <v-list-item prepend-icon="mdi-receipt" title="Compras (Facturas)" @click="irA('/dashboard/compras/compras')" />
-          <v-list-item prepend-icon="mdi-package-down" title="Recepciones" @click="irA('/dashboard/compras/recepciones')" />
-          <v-list-item prepend-icon="mdi-account" title="Proveedores" @click="irA('/dashboard/compras/proveedores')" />
-          <v-list-item prepend-icon="mdi-chart-bar" title="Reportes" @click="irA('/dashboard/compras/reportes')" />
+          <v-list-item prepend-icon="mdi-file-document-outline" title="Cotizaciones" :to="'/dashboard/compras/cotizaciones'" />
+          <v-list-item prepend-icon="mdi-file-document" title="Órdenes de Compra" :to="'/dashboard/compras/ordenes'" />
+          <v-list-item prepend-icon="mdi-receipt" title="Compras (Facturas)" :to="'/dashboard/compras/compras'" />
+          <v-list-item prepend-icon="mdi-package-down" title="Recepciones" :to="'/dashboard/compras/recepciones'" />
+          <v-list-item prepend-icon="mdi-account" title="Proveedores" :to="'/dashboard/compras/proveedores'" />
+          <v-list-item prepend-icon="mdi-chart-bar" title="Reportes" :to="'/dashboard/compras/reportes'" />
         </v-list-group>
 
         <!-- Inventario -->
@@ -78,13 +89,13 @@
           <template v-slot:activator="{ props }">
             <v-list-item v-bind="props" prepend-icon="mdi-package-variant" title="Inventario" color="warning" />
           </template>
-          <v-list-item prepend-icon="mdi-package" title="Artículos" @click="irA('/dashboard/inventario/articulos')" />
-          <v-list-item prepend-icon="mdi-warehouse" title="Almacenes" @click="irA('/dashboard/inventario/almacenes')" />
-          <v-list-item prepend-icon="mdi-transfer" title="Movimientos" @click="irA('/dashboard/inventario/movimientos')" />
-          <v-list-item prepend-icon="mdi-arrow-decision" title="Traspasos" @click="irA('/dashboard/inventario/traspasos')" />
-          <v-list-item prepend-icon="mdi-package-down" title="Recep. Traspaso" @click="irA('/dashboard/inventario/recepciones-traspaso')" />
-          <v-list-item prepend-icon="mdi-chart-box" title="Reportes" @click="irA('/dashboard/inventario/reportes')" />
-          <v-list-item prepend-icon="mdi-qrcode" title="Series" @click="irA('/dashboard/inventario/series')" />
+          <v-list-item prepend-icon="mdi-package" title="Artículos" :to="'/dashboard/inventario/articulos'" />
+          <v-list-item prepend-icon="mdi-warehouse" title="Almacenes" :to="'/dashboard/inventario/almacenes'" />
+          <v-list-item prepend-icon="mdi-transfer" title="Movimientos" :to="'/dashboard/inventario/movimientos'" />
+          <v-list-item prepend-icon="mdi-arrow-decision" title="Traspasos" :to="'/dashboard/inventario/traspasos'" />
+          <v-list-item prepend-icon="mdi-package-down" title="Recep. Traspaso" :to="'/dashboard/inventario/recepciones-traspaso'" />
+          <v-list-item prepend-icon="mdi-chart-box" title="Reportes" :to="'/dashboard/inventario/reportes'" />
+          <v-list-item prepend-icon="mdi-qrcode" title="Series" :to="'/dashboard/inventario/series'" />
         </v-list-group>
 
         <!-- Contabilidad -->
@@ -92,9 +103,9 @@
           <template v-slot:activator="{ props }">
             <v-list-item v-bind="props" prepend-icon="mdi-book-account" title="Contabilidad" color="info" />
           </template>
-          <v-list-item prepend-icon="mdi-book-multiple" title="Cuentas Contables" @click="irA('/dashboard/contabilidad/cuentas')" />
-          <v-list-item prepend-icon="mdi-notebook" title="Asientos" @click="irA('/dashboard/contabilidad/asientos')" />
-          <v-list-item prepend-icon="mdi-scale-balance" title="Balanza" @click="irA('/dashboard/contabilidad/balanza')" />
+          <v-list-item prepend-icon="mdi-book-multiple" title="Cuentas Contables" :to="'/dashboard/contabilidad/cuentas'" />
+          <v-list-item prepend-icon="mdi-notebook" title="Asientos" :to="'/dashboard/contabilidad/asientos'" />
+          <v-list-item prepend-icon="mdi-scale-balance" title="Balanza" :to="'/dashboard/contabilidad/balanza'" />
         </v-list-group>
 
         <!-- Fiscal -->
@@ -102,9 +113,9 @@
           <template v-slot:activator="{ props }">
             <v-list-item v-bind="props" prepend-icon="mdi-file-certificate" title="Fiscal" color="error" />
           </template>
-          <v-list-item prepend-icon="mdi-file-send" title="CFDIs Emitidos" @click="irA('/dashboard/fiscal/cfdis')" />
-          <v-list-item prepend-icon="mdi-clock-outline" title="Timbrado" @click="irA('/dashboard/fiscal/timbrado')" />
-          <v-list-item prepend-icon="mdi-cancel" title="Cancelaciones" @click="irA('/dashboard/fiscal/cancelaciones')" />
+          <v-list-item prepend-icon="mdi-file-send" title="CFDIs Emitidos" :to="'/dashboard/fiscal/cfdis'" />
+          <v-list-item prepend-icon="mdi-clock-outline" title="Timbrado" :to="'/dashboard/fiscal/timbrado'" />
+          <v-list-item prepend-icon="mdi-cancel" title="Cancelaciones" :to="'/dashboard/fiscal/cancelaciones'" />
         </v-list-group>
 
         <!-- CRM -->
@@ -112,25 +123,32 @@
           <template v-slot:activator="{ props }">
             <v-list-item v-bind="props" prepend-icon="mdi-account-group" title="CRM" color="purple" />
           </template>
-          <v-list-item prepend-icon="mdi-trending-up" title="Oportunidades" @click="irA('/dashboard/crm/oportunidades')" />
-          <v-list-item prepend-icon="mdi-calendar-check" title="Actividades" @click="irA('/dashboard/crm/actividades')" />
+          <v-list-item prepend-icon="mdi-trending-up" title="Oportunidades" :to="'/dashboard/crm/oportunidades'" />
+          <v-list-item prepend-icon="mdi-calendar-check" title="Actividades" :to="'/dashboard/crm/actividades'" />
         </v-list-group>
 
         <v-divider class="mx-3 my-2" />
 
         <!-- Punto de Venta - acceso directo -->
-        <v-list-item v-if="tienePermiso('pos.usar')" prepend-icon="mdi-cash-register" title="Punto de Venta" color="orange" @click="irA('/dashboard/pos')" />
+        <v-list-item v-if="tienePermiso('pos.usar')" prepend-icon="mdi-cash-register" title="Punto de Venta" color="orange" :to="'/dashboard/pos'" />
 
         <!-- Configuración -->
         <v-list-group v-if="tienePermiso('admin.configurar')" value="config">
           <template v-slot:activator="{ props }">
             <v-list-item v-bind="props" prepend-icon="mdi-cog-outline" title="Configuración" color="grey" />
           </template>
-          <v-list-item prepend-icon="mdi-account" title="Usuarios" @click="irA('/dashboard/configuracion/usuarios')" />
-          <v-list-item prepend-icon="mdi-shield-account" title="Roles y Permisos" @click="irA('/dashboard/configuracion/permisos')" />
-          <v-list-item prepend-icon="mdi-database-cog" title="Catálogos SAT" @click="irA('/dashboard/configuracion/catalogos')" />
-          <v-list-item prepend-icon="mdi-history" title="Auditoría" @click="irA('/dashboard/configuracion/auditoria')" />
+          <v-list-item prepend-icon="mdi-account" title="Usuarios" :to="'/dashboard/configuracion/usuarios'" />
+          <v-list-item prepend-icon="mdi-shield-account" title="Roles y Permisos" :to="'/dashboard/configuracion/permisos'" />
+          <v-list-item prepend-icon="mdi-database-cog" title="Catálogos SAT" :to="'/dashboard/configuracion/catalogos'" />
+          <v-list-item prepend-icon="mdi-history" title="Auditoría" :to="'/dashboard/configuracion/auditoria'" />
+          <v-divider class="mx-3 my-1" />
+          <v-list-item prepend-icon="mdi-domain" title="Empresa" :to="'/dashboard/configuracion/empresa'" />
+          <v-list-item prepend-icon="mdi-warehouse" title="Almacenes" :to="'/dashboard/configuracion/almacenes'" />
+          <v-list-item v-if="tienePermiso('reportes.ejecutar')" prepend-icon="mdi-chart-bar" title="Generador Reportes" :to="'/dashboard/configuracion/reportes'" />
+          <v-divider class="mx-3 my-1" />
+          <v-list-item prepend-icon="mdi-alert-circle-outline" title="Log de Errores" color="error" :to="'/dashboard/configuracion/log-errores'" />
         </v-list-group>
+
       </v-list>
     </v-navigation-drawer>
 
@@ -147,13 +165,17 @@
         <router-view />
       </v-container>
     </v-main>
+
+    <!-- Sistema de notificación de errores (siempre visible) -->
+    <ErrorNotification />
   </v-app>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import apiClient from '@/plugins/axios'
+import ErrorNotification from '@/components/ErrorNotification.vue'
 
 const router = useRouter()
 const drawer = ref(true)
@@ -177,9 +199,7 @@ async function cargarPermisos() {
       loading.value = false
       return
     }
-    const response = await axios.get('/api/v1/auth/mis-permisos', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const response = await apiClient.get('/api/v1/auth/mis-permisos')
     permisosUsuario.value = response.data.permisos || []
   } catch (err) {
     console.warn('No se pudieron cargar permisos, se otorgarán todos los permisos:', err)

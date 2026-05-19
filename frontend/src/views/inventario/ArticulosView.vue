@@ -41,6 +41,24 @@
       </v-card-text>
     </v-card>
 
+    <!-- Error de carga -->
+    <v-alert
+      v-if="errorCarga"
+      type="error"
+      variant="outlined"
+      class="mb-4"
+      closable
+      @click:close="errorCarga = null"
+    >
+      <template v-slot:title>Error al cargar artículos</template>
+      {{ errorCarga }}
+      <template v-slot:append>
+        <v-btn variant="text" color="error" @click="cargarDatos()">
+          <v-icon left>mdi-refresh</v-icon> Reintentar
+        </v-btn>
+      </template>
+    </v-alert>
+
     <!-- Data Table -->
     <v-card variant="outlined">
       <v-data-table
@@ -51,6 +69,15 @@
         :items-per-page="20"
         class="elevation-0"
       >
+        <!-- Mensaje cuando no hay datos -->
+        <template v-slot:no-data>
+          <v-alert type="info" variant="text" class="ma-4">
+            No se encontraron artículos.
+            <v-btn variant="text" color="info" @click="cargarDatos()" class="ml-2">
+              <v-icon left>mdi-refresh</v-icon> Recargar
+            </v-btn>
+          </v-alert>
+        </template>
         <template v-slot:item.sku="{ item }">
           <strong>{{ item.sku }}</strong>
         </template>
@@ -258,9 +285,10 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '@/plugins/axios'
 
 const loading = ref(false)
+const errorCarga = ref(null)
 const guardando = ref(false)
 const articulos = ref([])
 const unidadesMedida = ref([])
@@ -305,12 +333,11 @@ const formData = ref({
 
 async function cargarCatalogos() {
   try {
-    const token = localStorage.getItem('token')
     const [umRes, catRes, marRes, impRes] = await Promise.all([
-      axios.get('/api/v1/catalogos/unidades-medida', { headers: { Authorization: `Bearer ${token}` } }),
-      axios.get('/api/v1/catalogos/categorias', { headers: { Authorization: `Bearer ${token}` } }),
-      axios.get('/api/v1/catalogos/marcas', { headers: { Authorization: `Bearer ${token}` } }),
-      axios.get('/api/v1/catalogos/impuestos', { headers: { Authorization: `Bearer ${token}` } }),
+      apiClient.get('/api/v1/catalogos/unidades-medida'),
+      apiClient.get('/api/v1/catalogos/categorias'),
+      apiClient.get('/api/v1/catalogos/marcas'),
+      apiClient.get('/api/v1/catalogos/impuestos'),
     ])
     unidadesMedida.value = umRes.data?.datos || umRes.data || []
     categorias.value = catRes.data?.datos || catRes.data || []
@@ -318,24 +345,26 @@ async function cargarCatalogos() {
     impuestos.value = impRes.data?.datos || impRes.data || []
   } catch (err) {
     console.error('Error al cargar catálogos:', err)
+    snackbar.value = { show: true, text: 'Error al cargar catálogos', color: 'error' }
   }
 }
 
 async function cargarDatos() {
   loading.value = true
+  errorCarga.value = null
   try {
-    const token = localStorage.getItem('token')
     const params = {}
     if (filtros.value.search) params.search = filtros.value.search
 
-    const res = await axios.get('/api/v1/articulos', {
-      headers: { Authorization: `Bearer ${token}` },
-      params,
-    })
+    const res = await apiClient.get('/api/v1/articulos', { params })
     articulos.value = res.data?.datos || res.data || []
+    if (!Array.isArray(articulos.value)) {
+      articulos.value = []
+    }
   } catch (err) {
     console.error('Error al cargar artículos:', err)
-    snackbar.value = { show: true, text: 'Error al cargar artículos', color: 'error' }
+    errorCarga.value = err.response?.data?.error || err.message || 'Error al cargar artículos'
+    articulos.value = []
   } finally {
     loading.value = false
   }
@@ -388,21 +417,16 @@ async function guardar() {
 
   guardando.value = true
   try {
-    const token = localStorage.getItem('token')
     const payload = { ...formData.value }
     payload.precio_venta = parseFloat(payload.precio_venta) || 0
     payload.costo_promedio = parseFloat(payload.costo_promedio) || 0
     payload.stock_minimo = parseFloat(payload.stock_minimo) || 0
 
     if (editando.value && articuloEditando.value) {
-      await axios.put(`/api/v1/articulos/${articuloEditando.value.id}`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await apiClient.put(`/api/v1/articulos/${articuloEditando.value.id}`, payload)
       snackbar.value = { show: true, text: 'Artículo actualizado exitosamente', color: 'success' }
     } else {
-      await axios.post('/api/v1/articulos', payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await apiClient.post('/api/v1/articulos', payload)
       snackbar.value = { show: true, text: 'Artículo creado exitosamente', color: 'success' }
     }
 

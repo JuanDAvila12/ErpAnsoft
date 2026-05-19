@@ -52,9 +52,30 @@
       </v-card-text>
     </v-card>
 
+    <!-- Error Alert -->
+    <v-alert
+      v-if="errorMsg"
+      type="error"
+      variant="tonal"
+      closable
+      class="mb-4"
+      @click:close="errorMsg = ''"
+    >
+      {{ errorMsg }}
+    </v-alert>
+
     <!-- Data Table -->
     <v-card variant="outlined">
+      <!-- Mensaje cuando no hay datos -->
+      <template v-if="!loading && entidades.length === 0">
+        <v-card-text class="text-center pa-8">
+          <v-icon size="64" color="grey-lighten-1" class="mb-4">mdi-account-multiple-off</v-icon>
+          <h3 class="text-h6 text-medium-emphasis">No hay entidades registradas</h3>
+          <p class="text-body-2 text-medium-emphasis mt-1">Cree una nueva entidad usando el botón "Nueva Entidad"</p>
+        </v-card-text>
+      </template>
       <v-data-table
+        v-else
         :headers="columnas"
         :items="entidades"
         :loading="loading"
@@ -62,6 +83,7 @@
         :items-per-page="20"
         class="elevation-0"
       >
+
         <template v-slot:item.razon_social="{ item }">
           <strong>{{ item.razon_social }}</strong>
           <div v-if="item.nombre_comercial" class="text-caption text-medium-emphasis">{{ item.nombre_comercial }}</div>
@@ -96,10 +118,14 @@
     <!-- Diálogo Crear/Editar -->
     <v-dialog v-model="dialogoVisible" max-width="700px" persistent scrollable>
       <v-card>
-        <v-card-title :class="'text-h5 ' + (editando ? 'bg-info' : 'bg-primary') + ' text-white pa-4'">
+        <v-card-title :class="'text-h5 d-flex align-center ' + (editando ? 'bg-info' : 'bg-primary') + ' text-white pa-4'">
           <v-icon class="mr-2">{{ editando ? 'mdi-pencil' : 'mdi-plus-circle' }}</v-icon>
-          {{ editando ? 'Editar Entidad' : 'Nueva Entidad' }}
+          <span class="flex-grow-1">{{ editando ? 'Editar Entidad' : 'Nueva Entidad' }}</span>
+          <v-btn icon variant="text" color="white" @click="dialogoVisible = false" size="small">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
         </v-card-title>
+
         <v-card-text class="pa-4">
           <v-form ref="form">
             <v-row>
@@ -250,7 +276,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '@/plugins/axios'
 
 const loading = ref(false)
 const guardando = ref(false)
@@ -259,12 +285,14 @@ const regimenesFiscales = ref([])
 const dialogoVisible = ref(false)
 const editando = ref(false)
 const entidadEditando = ref(null)
+const errorMsg = ref('')
 
 const rolesDisponibles = ['cliente', 'proveedor', 'vendedor', 'contacto', 'empleado']
 
 const filtros = ref({ search: '', rol: '' })
 
 const snackbar = ref({ show: false, text: '', color: 'success' })
+
 
 const columnas = [
   { title: 'Razón Social', key: 'razon_social', sortable: true },
@@ -295,10 +323,7 @@ function capitalize(str) {
 
 async function cargarCatalogos() {
   try {
-    const token = localStorage.getItem('token')
-    const res = await axios.get('/api/v1/catalogos/regimenes-fiscales', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    const res = await apiClient.get('/api/v1/catalogos/regimenes-fiscales')
     regimenesFiscales.value = res.data?.datos || res.data || []
   } catch (err) {
     console.error('Error al cargar catálogos:', err)
@@ -307,24 +332,23 @@ async function cargarCatalogos() {
 
 async function cargarDatos() {
   loading.value = true
+  errorMsg.value = ''
   try {
-    const token = localStorage.getItem('token')
     const params = {}
     if (filtros.value.search) params.search = filtros.value.search
     if (filtros.value.rol) params.rol = filtros.value.rol
 
-    const res = await axios.get('/api/v1/entidades', {
-      headers: { Authorization: `Bearer ${token}` },
-      params,
-    })
+    const res = await apiClient.get('/api/v1/entidades', { params })
     entidades.value = res.data?.datos || res.data || []
   } catch (err) {
     console.error('Error al cargar entidades:', err)
+    errorMsg.value = err.response?.data?.error || 'Error al cargar entidades. Verifique la conexión con el servidor.'
     snackbar.value = { show: true, text: 'Error al cargar entidades', color: 'error' }
   } finally {
     loading.value = false
   }
 }
+
 
 function abrirDialogo(item) {
   editando.value = !!item
@@ -369,20 +393,16 @@ async function guardar() {
 
   guardando.value = true
   try {
-    const token = localStorage.getItem('token')
     const payload = { ...formData.value }
 
     if (editando.value && entidadEditando.value) {
-      await axios.put(`/api/v1/entidades/${entidadEditando.value.id}`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await apiClient.put(`/api/v1/entidades/${entidadEditando.value.id}`, payload)
       snackbar.value = { show: true, text: 'Entidad actualizada exitosamente', color: 'success' }
     } else {
-      await axios.post('/api/v1/entidades', payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await apiClient.post('/api/v1/entidades', payload)
       snackbar.value = { show: true, text: 'Entidad creada exitosamente', color: 'success' }
     }
+
 
     dialogoVisible.value = false
     await cargarDatos()

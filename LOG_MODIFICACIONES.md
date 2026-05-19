@@ -241,3 +241,193 @@
 - DashboardLayout.vue actualizado con nuevas rutas en menú lateral
 - Vue Router con todas las nuevas rutas protegidas
 - Flujos completos: Cotización → Orden → Recepción → Compra (factura)
+
+## 0015 - ERP operativo con datos demo, Ventas, Compras, Inventarios, Contabilidad, POS, CRM y RBAC
+### SQL (db/demo_data.sql):
+- Script de datos de demostración con 5 entidades (2 clientes, 2 proveedores, 1 vendedor), 10 artículos variados (algunos con usa_serie=true), 3 almacenes, 3 transacciones de ejemplo (cotización venta, orden compra, venta completada) y saldos iniciales de inventario
+- Folios generados correctamente usando obtener_folio()
+
+### Frontend - Módulo de Ventas completo:
+- CotizacionesView, OrdenesView, FacturasView con v-data-table, filtros por estado/fechas, diálogos de creación con autocomplete de clientes/artículos
+- Conversión cotización→orden→venta con endpoint /api/v1/transacciones/convertir/:id
+- Validación de stock suficiente antes de crear ventas
+- Detalle de documento con cabecera, líneas, origen/destino y panel historial (chatter)
+
+### Frontend - Módulo de Compras completo:
+- CotizacionesCompraView, OrdenesCompraView, ComprasView, RecepcionesView con misma estructura que Ventas
+- Recepciones incrementan inventario (entrada física sin contabilidad)
+- Compras generan asientos contables (cargo a inventario, abono a proveedores + IVA)
+
+### Frontend - Inventarios y Trazabilidad:
+- StockView: tabla con artículo, almacén, cantidad disponible calculada desde transacciones_detalle
+- TraspasosView: lista de traspasos con diálogo nuevo, selección almacén origen/destino
+- SeriesView: buscador por número de serie con historial de movimientos
+
+### Frontend - Contabilidad Básica:
+- CuentasView: árbol de cuentas contables (v-treeview) con selección y ver asientos
+- AsientosView: tabla de asientos con filtros por fecha, detalle de cada asiento
+- LibroMayorView: consulta por cuenta y rango de fechas con debe, haber y saldo
+- BalanzaView: tabla con cuenta, saldo inicial, movimientos, saldo final
+
+### Frontend - Punto de Venta (POS):
+- POSView: interfaz de caja rápida con buscador de productos, carrito, total, cambio
+- Botón "Cobrar" crea transacción tipo 'venta' con método de pago
+- Opción de imprimir ticket (genera PDF simple en ventana nueva)
+
+### Frontend - CRM Básico:
+- OportunidadesView: tabla con oportunidades, filtros por etapa, diálogo crear/editar
+- Relacionado con entidad (cliente) y vendedor
+
+### Frontend - Dashboard Home con KPIs:
+- Ventas del mes, Compras del mes, Stock bajo, Cuentas por cobrar
+- Cards de acceso rápido a todos los módulos
+
+### Backend - Mejoras:
+- TransaccionesModel.crearTransaccion valida stock para 'venta' y 'salida_inventario'
+- Lógica para 'compra': genera asientos de gasto/inventario
+- GET /api/v1/inventario/stock con filtros por almacén y artículo
+- GET /api/v1/inventario/serie/{numero_serie} con trazabilidad
+- Contabilidad routes con endpoints para cuentas, asientos, libro mayor, balanza
+- CRUD de oportunidades con tabla nueva (db/migration_v6_crm.sql)
+- Middleware checkPermission en rutas protegidas
+- Permisos RBAC aplicados en frontend (v-if en menú lateral)
+- Vista de administración de permisos (PermisosView) con checkboxes por rol
+
+### UX y Mejoras Generales:
+- v-snackbar en todas las vistas para feedback visual
+- Paginación en todas las v-data-table (items-per-page)
+- Ordenamiento por columnas
+- Loadings (v-progress-linear) mientras se cargan datos
+- Confirmaciones (v-dialog) antes de cancelar o convertir documentos
+- KPIs en dashboard principal
+
+### Configuración:
+- Se generó commit: "feat: ERP operativo con datos demo, Ventas, Compras, Inventarios, Contabilidad, POS, CRM y RBAC"
+
+## 0016 - Módulo de Configuración completo, generación de PDF y solución de errores en compras
+### SQL (db/migration_v7_configuracion.sql):
+- Creación de tabla `empresa_configuracion` para datos fiscales, logo, términos legales y CSD
+- Creación de tabla `almacenes_formatos` para configuración de impresión por almacén y tipo documento
+- Creación de tabla `reportes_configuracion` para almacenar consultas SQL parametrizadas
+- Adición de columna `almacen_id` en `control_folios` para secuencias por almacén
+- Inserción de nuevos permisos: `admin.configurar`, `reportes.editar`, `reportes.ejecutar`, `pdf.generar`, `pdf.configurar`
+- Inserción de datos demo de empresa y reportes de ejemplo
+
+### Node.js (api-node/):
+- `src/routes/configuracion.routes.js`: Endpoints GET/PUT /api/v1/configuracion/empresa para leer y escribir configuración de empresa (empresa_configuracion + entidades)
+- `src/routes/configuracionAlmacenes.routes.js`: CRUD completo de almacenes con series (series_documentos) y formatos de impresión (almacenes_formatos), soft delete
+- `src/routes/reportesConfiguracion.routes.js`: CRUD de reportes configurables con ejecución de SQL parametrizada, duplicado y eliminación
+- `src/routes/pdf.routes.js`: Generación de plantillas HTML para PDF de transacciones (cotización, orden_venta, factura, orden_compra, compra, traspaso) con datos de empresa, logo, entidad, artículos y totales
+- `api-node/index.js`: Registro de nuevas rutas (/api/v1/configuracion, /api/v1/reportes-configuracion, /api/v1/generar-pdf)
+- Mejora del endpoint GET /api/v1/entidades con filtro por rol (JOIN a entidad_roles)
+
+### Frontend (frontend/):
+- `src/views/configuracion/ConfiguracionEmpresaView.vue`: Formulario con 4 pestañas (v-tabs): Datos Generales, Datos Fiscales, Formatos de Documentos, Certificados CSD. Carga/guarda desde GET/PUT /api/v1/configuracion/empresa. Estilo Odoo con v-card agrupados.
+- `src/views/configuracion/ConfiguracionAlmacenesView.vue`: Tabla de almacenes con edición en diálogo de 3 pestañas: Datos Generales, Secuencias de Documentos (series), Formatos de Impresión (tamaño, orientación, márgenes). CRUD completo con soft delete.
+- `src/views/configuracion/GeneradorReportesView.vue`: Tabla de reportes con filtro por módulo. Diálogo de edición con 3 pestañas: Diseño, Consulta SQL (editor monospace), Parámetros y Columnas. Vista previa con ejecución de consulta y exportación a CSV.
+- `src/router/index.js`: Nuevas rutas /dashboard/configuracion/empresa, /dashboard/configuracion/almacenes, /dashboard/configuracion/reportes
+- `src/layouts/DashboardLayout.vue`: Nuevas opciones en menú Configuración: Empresa, Almacenes, Generador Reportes (con permiso reportes.ejecutar)
+- `src/views/compras/CotizacionesCompraView.vue` y `OrdenesCompraView.vue`: Corrección de autocompletado de proveedores usando endpoint con rol=proveedor
+
+### UX y Mejoras:
+- v-snackbar en todas las nuevas vistas para feedback visual de éxito/error
+- v-tabs con iconos en todas las vistas de configuración
+- v-card outlined agrupando campos por sección (estilo Odoo)
+- Permisos checkPermission en todos los endpoints de configuración
+- Exportación a CSV desde el generador de reportes
+- Plantillas HTML profesionales para PDF con logo, datos fiscales, tabla de artículos y firmas
+- Fallback de permisos en DashboardLayout para desarrollo
+
+## 0017 - Sistema de notificación de errores tipo SAP
+### Backend (api-node/):
+- `src/middleware/errorHandler.js`: Nuevo middleware de manejo de errores con clase `AppError` que genera códigos únicos formato `MOD-XXX` (ART-001, VENT-002, TRANS-001, ENT-001, INV-001, etc.). Responde con JSON estructurado: `{ codigo, mensaje, modulo, detalle, timestamp }`. Integrado al final de las rutas en `api-node/index.js` con `app.use(errorHandler)`.
+- `src/routes/transacciones.routes.js`: Actualizados todos los catch blocks para usar `next(new AppError('TRANS-XXX', err.message))` y respuestas 404 con formato de error estándar.
+- `src/routes/inventario.routes.js`: Actualizados todos los catch blocks en almacenes, entidades, artículos y reportes para usar `next(new AppError('INV-XXX'/'ENT-XXX'/'ART-XXX', err.message))` con códigos específicos por operación.
+- `api-node/index.js`: Actualizados endpoints inline de artículos y entidades para usar `next(new AppError(...))` en catch blocks. Importación de `AppError` desde el middleware.
+
+### Frontend (frontend/):
+- `src/stores/errorStore.js`: Nuevo store reactivo con `useErrorStore()` que expone `errors`, `hasErrors`, `errorCount`, y acciones `addError`, `removeError`, `clearAll`, `toggleExpand`. Almacena hasta 50 errores con estructura `{ id, codigo, mensaje, modulo, detalle, timestamp, expanded }`.
+- `src/components/ErrorNotification.vue`: Nuevo componente de notificación flotante en esquina inferior derecha. Muestra panel con cabecera roja, lista de errores con ícono, código, módulo y mensaje. Al hacer clic se expande para mostrar detalle técnico y timestamp. Botón de cerrar (X) individual y botón para ocultar todas. Auto-eliminación después de 15 segundos con `setTimeout`. Colores por prefijo de código (ART=orange, VENT=red, TRANS=purple, ENT=blue, INV=amber, etc.).
+- `src/layouts/DashboardLayout.vue`: Integración de `<ErrorNotification />` al final del template para visibilidad global. Import del componente.
+- `src/plugins/axios.js`: Interceptor de respuesta actualizado para capturar errores HTTP y enviarlos al store de errores. Extrae el JSON estructurado del backend (`{ codigo, mensaje, modulo, detalle, timestamp }`) o construye uno por defecto según el código de estado HTTP. Maneja errores de red (sin respuesta del servidor) con código `SYS-002`.
+
+## 0018 - Log persistente de errores, mejoras en navegación y detalle multi-tipo
+### Base de datos (db/):
+- `migration_v10_log_errores.sql`: Nueva migración que crea la tabla `log_errores` con columnas: id, codigo, mensaje, modulo, detalle, usuario_id (FK a usuarios), ruta, ip, fecha. Incluye índices para búsqueda por fecha, módulo, código y usuario. Trigger de auditoría que registra en `log_modificaciones_cabecera` cada nuevo error.
+
+### Backend (api-node/):
+- `src/routes/logErrores.routes.js`: Nuevo archivo con dos endpoints:
+  - `POST /api/v1/log-errores`: Registra errores desde el frontend con autenticación. Valida que codigo y mensaje sean requeridos.
+  - `GET /api/v1/log-errores`: Consulta paginada con filtros por fecha_desde, fecha_hasta, modulo, codigo. Solo accesible con permiso `admin.configurar`. Incluye JOIN con usuarios para mostrar nombre.
+- `api-node/index.js`: Registro de la ruta `logErroresRoutes` en `/api/v1/log-errores`.
+
+### Frontend (frontend/):
+- `src/components/ErrorNotification.vue`: Ahora envía automáticamente cada error al backend via `POST /api/v1/log-errores` cuando hay un token de sesión. Implementación silenciosa (no interrumpe al usuario si falla el envío).
+- `src/views/configuracion/ConfiguracionLogErrores.vue`: Nueva vista administrativa para consultar el log de errores. Incluye:
+  - Tabla con columnas: Código (chip coloreado por módulo), Módulo, Mensaje, Detalle (tooltip), Usuario, Fecha, Acciones.
+  - Filtros por código, módulo, rango de fechas.
+  - Paginación nativa de Vuetify.
+  - Diálogo modal con detalle completo del error (código, módulo, mensaje, detalle técnico, usuario, fecha, ruta, IP).
+  - Diseño responsivo y colores consistentes con el sistema de notificación.
+- `src/router/index.js`: Ruta `LogErrores` registrada bajo `/dashboard/configuracion/log-errores` con permiso `admin.configurar`.
+- `src/layouts/DashboardLayout.vue`: 
+  - Nuevo botón **"Inicio"** en el menú lateral con ícono `mdi-home` que redirige a `/dashboard`.
+  - Nuevo item **"Log de Errores"** dentro del grupo Configuración con ícono `mdi-alert-circle-outline` color error.
+- `src/views/compras/DocumentoCompraDetalle.vue`: Mejora multi-tipo:
+  - Nuevas propiedades computadas `esVenta` y `esCompra` para detectar el tipo de documento.
+  - `textoBotonVolver` dinámico que muestra "Volver a Ventas" o "Volver a Compras" según el tipo de documento.
+  - Compatible con tipos: venta, orden_venta, cotizacion, compra, orden_compra, cotizacion_compra, recepcion_compra.
+
+## 0019 - Corrección: Volver a Ventas redirige a Ventas y Log de Errores guarda en BD
+
+### Bugfix 1 - Botón "Volver a Ventas" redirigía siempre a Dashboard:
+- **Causa raíz:** El router de Vue.js no tenía rutas definidas para `/dashboard/ventas` ni `/dashboard/compras`. Solo tenía rutas hijas como `ventas/facturas`, `ventas/cotizaciones`, etc. Al hacer `router.push('/dashboard/ventas')`, el catch-all `:pathMatch(.*)*` redirigía a `/dashboard`.
+- **Solución:** Se agregaron rutas redirect en `frontend/src/router/index.js`:
+  - `/dashboard/ventas` → redirige a `/dashboard/ventas/facturas`
+  - `/dashboard/compras` → redirige a `/dashboard/compras/compras`
+- La función `volver()` en `DocumentoCompraDetalle.vue` ya estaba correcta con la detección de tipo por `esVenta`/`esCompra`.
+
+### Bugfix 2 - Log de Errores no guardaba en BD:
+- **Causa raíz 1:** La migración `migration_v10_log_errores.sql` **NO** estaba incluida en `docker-compose.yml` (faltaba en el array de volumes del servicio postgres). Por lo tanto la tabla `log_errores` nunca se creó en la BD. Se agregó `07_migration_v10_log_errores.sql` al docker-compose y se ejecutó `CREATE TABLE` manualmente.
+- **Causa raíz 2:** La migración v10 incluye un trigger de auditoría `trg_audit_log_errores` que intenta leer `app.usuario_id` (setAuditContext). Este contexto NO se configura en el endpoint POST de log-errores, por lo que cualquier INSERT fallaría con error. Se eliminó el trigger de la tabla ya que es redundante auditar una tabla de logs.
+- **Solución adicional:** El frontend ahora envía `usuario_id` explícitamente desde el objeto `usuario` guardado en localStorage.
+- **Solución adicional backend:** Se modificó `logErrores.routes.js` para aceptar `usuario_id` desde el body, priorizándolo sobre el extraído del JWT.
+
+### Bugfix 3 - Log de Errores mostraba tabla vacía sin mensaje:
+- **Archivo**: `frontend/src/views/configuracion/ConfiguracionLogErrores.vue`
+- **Solución**: Se agregó un `v-card` con estado vacío (condicional `v-if="!loading && errores.length === 0"`) que muestra el mensaje "No hay errores registrados" con un ícono grande y texto descriptivo.
+
+### Contenedores reiniciados:
+- `docker compose restart frontend api-node`
+
+## 0019b - Corrección final: Volver a ruta específica por subtipo + Log de errores en BD
+
+### Refinamiento Fix 1 - Log de errores:
+- Se confirmó que el flujo completo funciona:
+  - `ErrorNotification.vue`: envía POST con `{ codigo, mensaje, modulo, detalle, ruta, usuario_id }` (usuario_id extraído de localStorage)
+  - `logErrores.routes.js`: POST protegido con authMiddleware, INSERT en log_errores con todos los campos
+  - `ConfiguracionLogErrores.vue`: GET con filtros, muestra "No hay errores registrados" si array vacío
+  - Tabla `log_errores` ya existe en BD (creada manualmente + agregada a docker-compose.yml)
+  - Trigger de auditoría eliminado (causaba error al insertar sin setAuditContext)
+
+### Refinamiento Fix 2 - Botón volver ahora redirige a lista específica por subtipo:
+- **Antes**: `volver()` redirigía a genéricos `/dashboard/ventas` o `/dashboard/compras` (ambos con redirect catch-all)
+- **Ahora**: `volver()` usa `mapRutaVolver` con rutas específicas:
+  - `cotizacion_compra` → `/dashboard/compras/cotizaciones`
+  - `orden_compra` → `/dashboard/compras/ordenes`
+  - `compra` → `/dashboard/compras/compras`
+  - `recepcion_compra` → `/dashboard/compras/recepciones`
+  - `cotizacion` → `/dashboard/ventas/cotizaciones`
+  - `orden_venta` → `/dashboard/ventas/ordenes`
+  - `venta` → `/dashboard/ventas/facturas`
+  - otros → `/dashboard`
+- **Texto del botón**: ahora usa `mapTextoVolver` con textos precisos:
+  - "Volver a Cotizaciones de Compra", "Volver a Órdenes de Compra", "Volver a Compras", "Volver a Recepciones"
+  - "Volver a Cotizaciones de Venta", "Volver a Órdenes de Venta", "Volver a Facturas de Venta"
+- Todos los cambios en `frontend/src/views/compras/DocumentoCompraDetalle.vue`
+
+### Rutas redirect agregadas en router/index.js (compatibilidad):
+- `/dashboard/ventas` → `/dashboard/ventas/facturas`
+- `/dashboard/compras` → `/dashboard/compras/compras`
+
+### Contenedores reiniciados:

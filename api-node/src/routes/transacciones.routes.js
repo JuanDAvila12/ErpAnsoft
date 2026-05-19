@@ -3,6 +3,7 @@ const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
 const TransaccionesModel = require('../models/transacciones.model');
 const pool = require('../db');
+const { AppError } = require('../middleware/errorHandler');
 
 /**
  * @swagger
@@ -37,7 +38,7 @@ const pool = require('../db');
  */
 
 // GET / - Listar transacciones con filtros
-router.get('/', authMiddleware, async (req, res) => {
+router.get('/', authMiddleware, async (req, res, next) => {
   try {
     const { tipo, estado, entidad_cliente_id, entidad_proveedor_id, fecha_desde, fecha_hasta } = req.query;
     const docs = await TransaccionesModel.findAll({
@@ -45,25 +46,105 @@ router.get('/', authMiddleware, async (req, res) => {
     });
     res.json(docs);
   } catch (err) {
-    console.error('Error al listar transacciones:', err);
-    res.status(500).json({ error: 'Error al obtener transacciones' });
+    next(new AppError('TRANS-005', err.message));
   }
 });
 
-// GET /:id - Obtener una transacción por ID
-router.get('/:id', authMiddleware, async (req, res) => {
+// POST / - Crear una transacción
+router.post('/', authMiddleware, async (req, res, next) => {
   try {
-    const doc = await TransaccionesModel.findById(req.params.id);
-    if (!doc) return res.status(404).json({ error: 'Transacción no encontrada' });
-    res.json(doc);
+    const { tipo, ...datos } = req.body;
+    const tiposValidos = [
+      'cotizacion', 'orden_venta', 'venta',
+      'orden_compra', 'compra',
+      'ajuste_inventario', 'entrada_inventario', 'salida_inventario',
+      'pago', 'cobro',
+      'cotizacion_compra', 'recepcion_compra', 'traspaso', 'recepcion_traspaso',
+    ];
+    if (!tipo || !tiposValidos.includes(tipo)) {
+      return res.status(400).json({
+        codigo: 'TRANS-007',
+        mensaje: 'Tipo de transacción inválido',
+        modulo: 'Transacciones',
+        detalle: `Use uno de: ${tiposValidos.join(', ')}`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    if (!datos.articulos?.length) {
+      return res.status(400).json({
+        codigo: 'TRANS-008',
+        mensaje: 'Artículos requeridos',
+        modulo: 'Transacciones',
+        detalle: 'El array de artículos no puede estar vacío',
+        timestamp: new Date().toISOString(),
+      });
+    }
+    const doc = await TransaccionesModel.crearTransaccion(tipo, datos, req);
+    res.status(201).json(doc);
   } catch (err) {
-    console.error('Error al obtener transacción:', err);
-    res.status(500).json({ error: 'Error al obtener transacción' });
+    next(new AppError('TRANS-001', err.message));
+  }
+});
+
+// POST /convertir/:origenId - Convertir una transacción (ej: cotizacion → orden_venta → venta)
+// IMPORTANTE: Esta ruta debe ir ANTES de /:id para evitar que Express interprete "convertir" como un ID
+router.post('/convertir/:origenId', authMiddleware, async (req, res, next) => {
+  try {
+    const { origenId } = req.params;
+    const { nuevo_tipo } = req.body;
+
+    if (!nuevo_tipo) {
+      return res.status(400).json({
+        codigo: 'TRANS-007',
+        mensaje: 'Tipo de transacción inválido',
+        modulo: 'Transacciones',
+        detalle: 'nuevo_tipo es requerido',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const doc = await TransaccionesModel.convertirTransaccion(origenId, nuevo_tipo, req);
+    res.status(201).json(doc);
+  } catch (err) {
+    next(new AppError('TRANS-004', err.message));
+  }
+});
+
+// POST /:id/convertir - Ruta alternativa para convertir (usada por vistas de listado)
+router.post('/:id/convertir', authMiddleware, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { nuevo_tipo } = req.body;
+
+    if (!nuevo_tipo) {
+      return res.status(400).json({
+        codigo: 'TRANS-007',
+        mensaje: 'Tipo de transacción inválido',
+        modulo: 'Transacciones',
+        detalle: 'nuevo_tipo es requerido',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const doc = await TransaccionesModel.convertirTransaccion(id, nuevo_tipo, req);
+    res.status(201).json(doc);
+  } catch (err) {
+    next(new AppError('TRANS-004', err.message));
+  }
+});
+
+// POST /:id/cancelar - Cancelar una transacción
+router.post('/:id/cancelar', authMiddleware, async (req, res, next) => {
+  try {
+    const resultado = await TransaccionesModel.cancelarTransaccion(req.params.id, req);
+    res.json(resultado);
+  } catch (err) {
+    next(new AppError('TRANS-002', err.message));
   }
 });
 
 // GET /:id/historial - Obtener historial de auditoría (CHATTER)
-router.get('/:id/historial', authMiddleware, async (req, res) => {
+router.get('/:id/historial', authMiddleware, async (req, res, next) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
@@ -95,64 +176,24 @@ router.get('/:id/historial', authMiddleware, async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    console.error('Error al obtener historial:', err);
-    res.status(500).json({ error: 'Error al obtener historial de la transacción' });
+    next(new AppError('TRANS-006', err.message));
   }
 });
 
-// POST / - Crear una transacción
-router.post('/', authMiddleware, async (req, res) => {
+// GET /:id - Obtener una transacción por ID (debe ir DESPUÉS de rutas específicas como /:id/historial)
+router.get('/:id', authMiddleware, async (req, res, next) => {
   try {
-    const { tipo, ...datos } = req.body;
-    const tiposValidos = [
-      'cotizacion', 'orden_venta', 'venta',
-      'orden_compra', 'compra',
-      'ajuste_inventario', 'entrada_inventario', 'salida_inventario',
-      'pago', 'cobro',
-      'cotizacion_compra', 'recepcion_compra', 'traspaso', 'recepcion_traspaso',
-    ];
-    if (!tipo || !tiposValidos.includes(tipo)) {
-      return res.status(400).json({
-        error: `Tipo inválido. Use uno de: ${tiposValidos.join(', ')}`,
-      });
-    }
-    if (!datos.articulos?.length) {
-      return res.status(400).json({ error: 'articulos es requerido (array no vacío)' });
-    }
-    const doc = await TransaccionesModel.crearTransaccion(tipo, datos, req);
-    res.status(201).json(doc);
+    const doc = await TransaccionesModel.findById(req.params.id);
+    if (!doc) return res.status(404).json({
+      codigo: 'TRANS-003',
+      mensaje: 'Transacción no encontrada',
+      modulo: 'Transacciones',
+      detalle: `No se encontró transacción con ID ${req.params.id}`,
+      timestamp: new Date().toISOString(),
+    });
+    res.json(doc);
   } catch (err) {
-    console.error('Error al crear transacción:', err);
-    res.status(500).json({ error: err.message || 'Error al crear transacción' });
-  }
-});
-
-// POST /convertir/:origenId - Convertir una transacción (ej: cotizacion → orden_venta → venta)
-router.post('/convertir/:origenId', authMiddleware, async (req, res) => {
-  try {
-    const { origenId } = req.params;
-    const { nuevo_tipo } = req.body;
-
-    if (!nuevo_tipo) {
-      return res.status(400).json({ error: 'nuevo_tipo es requerido' });
-    }
-
-    const doc = await TransaccionesModel.convertirTransaccion(origenId, nuevo_tipo, req);
-    res.status(201).json(doc);
-  } catch (err) {
-    console.error('Error al convertir transacción:', err);
-    res.status(500).json({ error: err.message || 'Error al convertir transacción' });
-  }
-});
-
-// POST /:id/cancelar - Cancelar una transacción
-router.post('/:id/cancelar', authMiddleware, async (req, res) => {
-  try {
-    const resultado = await TransaccionesModel.cancelarTransaccion(req.params.id, req);
-    res.json(resultado);
-  } catch (err) {
-    console.error('Error al cancelar transacción:', err);
-    res.status(500).json({ error: err.message || 'Error al cancelar transacción' });
+    next(new AppError('TRANS-003', err.message));
   }
 });
 
