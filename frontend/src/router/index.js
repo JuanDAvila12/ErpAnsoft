@@ -16,6 +16,7 @@ import CotizacionesView from '../views/ventas/CotizacionesView.vue'
 import OrdenesView from '../views/ventas/OrdenesView.vue'
 import FacturasView from '../views/ventas/FacturasView.vue'
 import ClientesView from '../views/ventas/ClientesView.vue'
+import DocumentoVentaForm from '../views/ventas/DocumentoVentaForm.vue'
 
 // Compras
 import CotizacionesCompraView from '../views/compras/CotizacionesCompraView.vue'
@@ -41,9 +42,14 @@ import SeriesView from '../views/inventario/SeriesView.vue'
 // Contabilidad
 import CuentasView from '../views/contabilidad/CuentasView.vue'
 import AsientosView from '../views/contabilidad/AsientosView.vue'
+import AsientosManualesView from '../views/contabilidad/AsientosManualesView.vue'
 import BalanzaView from '../views/contabilidad/BalanzaView.vue'
 import LibroMayorView from '../views/contabilidad/LibroMayorView.vue'
 import StockView from '../views/inventario/StockView.vue'
+
+// Finanzas
+import CxcView from '../views/finanzas/CxcView.vue'
+import CxpView from '../views/finanzas/CxpView.vue'
 
 // Fiscal
 import CFDIView from '../views/fiscal/CFDIView.vue'
@@ -66,6 +72,7 @@ import ConfiguracionEmpresaView from '../views/configuracion/ConfiguracionEmpres
 import ConfiguracionAlmacenesView from '../views/configuracion/ConfiguracionAlmacenesView.vue'
 import GeneradorReportesView from '../views/configuracion/GeneradorReportesView.vue'
 import ConfiguracionLogErroresView from '../views/configuracion/ConfiguracionLogErrores.vue'
+import ConfiguracionPlantillasPDF from '../views/configuracion/ConfiguracionPlantillasPDF.vue'
 
 // Portal Clientes
 import PortalFacturasView from '../views/portal/FacturasView.vue'
@@ -130,9 +137,15 @@ const routes = [
         meta: { requierePermiso: 'ventas.ver' },
       },
       {
+        path: 'ventas/nuevo/:tipo',
+        name: 'DocumentoVentaNuevo',
+        component: DocumentoVentaForm,
+        meta: { requierePermiso: 'ventas.crear' },
+      },
+      {
         path: 'ventas/:id',
         name: 'DocumentoVentaDetalle',
-        component: DocumentoCompraDetalle,
+        component: DocumentoVentaForm,
         meta: { requierePermiso: 'ventas.ver' },
       },
       // Compras
@@ -263,6 +276,12 @@ const routes = [
         component: LibroMayorView,
         meta: { requierePermiso: 'contabilidad.ver' },
       },
+      {
+        path: 'contabilidad/asientos-manuales',
+        name: 'AsientosManuales',
+        component: AsientosManualesView,
+        meta: { requierePermiso: 'contabilidad.ver' },
+      },
       // Fiscal
       {
         path: 'fiscal/cfdis',
@@ -301,6 +320,19 @@ const routes = [
         name: 'POS',
         component: POSView,
         meta: { requierePermiso: 'pos.usar' },
+      },
+      // Finanzas - CxC y CxP
+      {
+        path: 'cxc',
+        name: 'CxC',
+        component: CxcView,
+        meta: { requierePermiso: 'contabilidad.ver' },
+      },
+      {
+        path: 'cxp',
+        name: 'CxP',
+        component: CxpView,
+        meta: { requierePermiso: 'contabilidad.ver' },
       },
       // Configuración
       {
@@ -349,6 +381,12 @@ const routes = [
         path: 'configuracion/log-errores',
         name: 'LogErrores',
         component: ConfiguracionLogErroresView,
+        meta: { requierePermiso: 'admin.configurar' },
+      },
+      {
+        path: 'configuracion/plantillas-pdf',
+        name: 'PlantillasPDF',
+        component: ConfiguracionPlantillasPDF,
         meta: { requierePermiso: 'admin.configurar' },
       },
       // Ruta heredada (compatibilidad)

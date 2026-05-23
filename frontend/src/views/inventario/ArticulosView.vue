@@ -245,6 +245,36 @@
                 />
               </v-col>
             </v-row>
+            <v-divider class="my-3" />
+            <h4 class="text-subtitle-1 font-weight-bold mb-2">Configuración Contable</h4>
+            <v-row>
+              <v-col cols="12" md="6">
+                <v-autocomplete
+                  v-model="formData.cuenta_ingreso_id"
+                  :items="cuentasContables"
+                  item-title="codigo_nombre"
+                  item-value="id"
+                  label="Cuenta de Ingreso (Ventas)"
+                  variant="outlined"
+                  density="compact"
+                  clearable
+                  :loading="loadingCuentas"
+                />
+              </v-col>
+              <v-col cols="12" md="6">
+                <v-autocomplete
+                  v-model="formData.cuenta_gasto_id"
+                  :items="cuentasContables"
+                  item-title="codigo_nombre"
+                  item-value="id"
+                  label="Cuenta de Gasto (Compras)"
+                  variant="outlined"
+                  density="compact"
+                  clearable
+                  :loading="loadingCuentas"
+                />
+              </v-col>
+            </v-row>
             <v-row>
               <v-col cols="12">
                 <v-switch
@@ -288,6 +318,7 @@ import { ref, onMounted } from 'vue'
 import apiClient from '@/plugins/axios'
 
 const loading = ref(false)
+const loadingCuentas = ref(false)
 const errorCarga = ref(null)
 const guardando = ref(false)
 const articulos = ref([])
@@ -295,6 +326,7 @@ const unidadesMedida = ref([])
 const categorias = ref([])
 const marcas = ref([])
 const impuestos = ref([])
+const cuentasContables = ref([])
 const dialogoVisible = ref(false)
 const editando = ref(false)
 const articuloEditando = ref(null)
@@ -329,20 +361,28 @@ const formData = ref({
   impuesto_id: null,
   stock_minimo: 0,
   activo: true,
+  cuenta_ingreso_id: null,
+  cuenta_gasto_id: null,
 })
 
 async function cargarCatalogos() {
   try {
-    const [umRes, catRes, marRes, impRes] = await Promise.all([
+    const [umRes, catRes, marRes, impRes, cueRes] = await Promise.all([
       apiClient.get('/api/v1/catalogos/unidades-medida'),
       apiClient.get('/api/v1/catalogos/categorias'),
       apiClient.get('/api/v1/catalogos/marcas'),
       apiClient.get('/api/v1/catalogos/impuestos'),
+      apiClient.get('/api/v1/contabilidad/cuentas'),
     ])
     unidadesMedida.value = umRes.data?.datos || umRes.data || []
     categorias.value = catRes.data?.datos || catRes.data || []
     marcas.value = marRes.data?.datos || marRes.data || []
     impuestos.value = impRes.data?.datos || impRes.data || []
+    const cuentas = cueRes.data?.datos || cueRes.data || []
+    cuentasContables.value = cuentas.map(c => ({
+      ...c,
+      codigo_nombre: `${c.codigo} - ${c.nombre}`,
+    }))
   } catch (err) {
     console.error('Error al cargar catálogos:', err)
     snackbar.value = { show: true, text: 'Error al cargar catálogos', color: 'error' }
@@ -388,6 +428,8 @@ function abrirDialogo(item) {
       impuesto_id: item.impuesto_id || null,
       stock_minimo: item.stock_minimo || 0,
       activo: item.activo !== false,
+      cuenta_ingreso_id: item.cuenta_ingreso_id || null,
+      cuenta_gasto_id: item.cuenta_gasto_id || null,
     }
   } else {
     formData.value = {
@@ -404,6 +446,8 @@ function abrirDialogo(item) {
       impuesto_id: null,
       stock_minimo: 0,
       activo: true,
+      cuenta_ingreso_id: null,
+      cuenta_gasto_id: null,
     }
   }
   dialogoVisible.value = true

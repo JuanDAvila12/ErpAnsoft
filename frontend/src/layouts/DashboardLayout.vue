@@ -105,7 +105,17 @@
           </template>
           <v-list-item prepend-icon="mdi-book-multiple" title="Cuentas Contables" :to="'/dashboard/contabilidad/cuentas'" />
           <v-list-item prepend-icon="mdi-notebook" title="Asientos" :to="'/dashboard/contabilidad/asientos'" />
+          <v-list-item prepend-icon="mdi-pencil-plus" title="Asientos Manuales" :to="'/dashboard/contabilidad/asientos-manuales'" />
           <v-list-item prepend-icon="mdi-scale-balance" title="Balanza" :to="'/dashboard/contabilidad/balanza'" />
+        </v-list-group>
+
+        <!-- Finanzas (CxC, CxP) -->
+        <v-list-group v-if="tienePermiso('contabilidad.ver')" value="finanzas">
+          <template v-slot:activator="{ props }">
+            <v-list-item v-bind="props" prepend-icon="mdi-cash-multiple" title="Finanzas" color="teal" />
+          </template>
+          <v-list-item prepend-icon="mdi-account-cash" title="Cuentas por Cobrar" :to="'/dashboard/cxc'" />
+          <v-list-item prepend-icon="mdi-cash-remove" title="Cuentas por Pagar" :to="'/dashboard/cxp'" />
         </v-list-group>
 
         <!-- Fiscal -->
@@ -147,6 +157,7 @@
           <v-list-item v-if="tienePermiso('reportes.ejecutar')" prepend-icon="mdi-chart-bar" title="Generador Reportes" :to="'/dashboard/configuracion/reportes'" />
           <v-divider class="mx-3 my-1" />
           <v-list-item prepend-icon="mdi-alert-circle-outline" title="Log de Errores" color="error" :to="'/dashboard/configuracion/log-errores'" />
+          <v-list-item prepend-icon="mdi-file-document-edit-outline" title="Plantillas PDF" :to="'/dashboard/configuracion/plantillas-pdf'" />
         </v-list-group>
 
       </v-list>

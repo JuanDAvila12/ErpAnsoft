@@ -38,11 +38,15 @@ const contabilidadRoutes = require('./src/routes/contabilidad.routes');
 const oportunidadesRoutes = require('./src/routes/oportunidades.routes');
 const configuracionRoutes = require('./src/routes/configuracion.routes');
 const configuracionAlmacenesRoutes = require('./src/routes/configuracionAlmacenes.routes');
+const cxcRoutes = require('./src/routes/cxc.routes');
+const cxpRoutes = require('./src/routes/cxp.routes');
 const reportesConfiguracionRoutes = require('./src/routes/reportesConfiguracion.routes');
 const pdfRoutes = require('./src/routes/pdf.routes');
 const logErroresRoutes = require('./src/routes/logErrores.routes');
+const plantillasPdfRoutes = require('./src/routes/plantillasPdf.routes');
 
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/plantillas-pdf', plantillasPdfRoutes);
 app.use('/api/v1/contabilidad', contabilidadRoutes);
 app.use('/api/v1/oportunidades', oportunidadesRoutes);
 app.use('/api/v1/inventario', inventarioRoutes);
@@ -64,6 +68,10 @@ app.use('/api/v1/permisos', permisosRoutes);
 app.use('/api/v1/transacciones', transaccionesRoutes);
 app.use('/api/v1/reportes', reportesRoutes);
 app.use('/api/v1/log-errores', logErroresRoutes);
+
+// CxC y CxP
+app.use('/api/v1/cxc', cxcRoutes);
+app.use('/api/v1/cxp', cxpRoutes);
 
 /**
  * GET /api/v1/articulos?search=
@@ -309,6 +317,86 @@ app.put('/api/v1/entidades/:id', authMiddleware, async (req, res, next) => {
 });
 
 /**
+ * GET /api/v1/entidades/:id/contabilidad
+ * Obtener la configuración contable de una entidad
+ */
+app.get('/api/v1/entidades/:id/contabilidad', authMiddleware, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `SELECT ecc.*, cc.codigo AS cuenta_codigo, cc.nombre AS cuenta_nombre
+       FROM entidad_cuentas_contables ecc
+       LEFT JOIN cuentas_contables cc ON cc.id = ecc.cuenta_contable_id
+       WHERE ecc.entidad_id = $1 AND ecc.activo = true
+       ORDER BY ecc.rol_contable`,
+      [id]
+    );
+    res.json({ datos: result.rows });
+  } catch (err) {
+    next(new AppError('ENT-007', err.message));
+  }
+});
+
+/**
+ * PUT /api/v1/entidades/:id/contabilidad
+ * Guardar la configuración contable de una entidad
+ */
+app.put('/api/v1/entidades/:id/contabilidad', authMiddleware, async (req, res, next) => {
+  const client = await pool.connect();
+  try {
+    const { id } = req.params;
+    const { cuentas } = req.body; // Array de { rol_contable, cuenta_contable_id }
+
+    if (!Array.isArray(cuentas)) {
+      return res.status(400).json({
+        codigo: 'ENT-008',
+        mensaje: 'Se requiere un array de configuraciones contables',
+        modulo: 'Entidades',
+        detalle: 'El campo cuentas debe ser un array de {rol_contable, cuenta_contable_id}',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    await client.query('BEGIN');
+
+    // Eliminar configuraciones existentes para esta entidad
+    await client.query('DELETE FROM entidad_cuentas_contables WHERE entidad_id = $1', [id]);
+
+    // Insertar nuevas configuraciones
+    for (const c of cuentas) {
+      if (c.rol_contable && c.cuenta_contable_id) {
+        await client.query(
+          `INSERT INTO entidad_cuentas_contables (entidad_id, rol_contable, cuenta_contable_id, activo)
+           VALUES ($1, $2, $3, true)
+           ON CONFLICT (entidad_id, rol_contable)
+           DO UPDATE SET cuenta_contable_id = $3, activo = true`,
+          [id, c.rol_contable, c.cuenta_contable_id]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+
+    // Devolver las configuraciones guardadas
+    const result = await pool.query(
+      `SELECT ecc.*, cc.codigo AS cuenta_codigo, cc.nombre AS cuenta_nombre
+       FROM entidad_cuentas_contables ecc
+       LEFT JOIN cuentas_contables cc ON cc.id = ecc.cuenta_contable_id
+       WHERE ecc.entidad_id = $1
+       ORDER BY ecc.rol_contable`,
+      [id]
+    );
+
+    res.json({ datos: result.rows, mensaje: 'Configuración contable guardada exitosamente' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(new AppError('ENT-009', err.message));
+  } finally {
+    client.release();
+  }
+});
+
+/**
  * GET /api/v1/almacenes
  * Listar todos los almacenes. Devuelve un array JSON.
  */
@@ -324,17 +412,207 @@ app.get('/api/v1/almacenes', authMiddleware, async (req, res, next) => {
 });
 
 /**
+ * POST /api/v1/almacenes
+ * Crear un nuevo almacén. Requiere nombre (obligatorio) y ubicacion (opcional).
+ */
+app.post('/api/v1/almacenes', authMiddleware, async (req, res, next) => {
+  try {
+    const { nombre, ubicacion } = req.body;
+
+    // Validar nombre obligatorio
+    if (!nombre || typeof nombre !== 'string' || nombre.trim() === '') {
+      return res.status(400).json({
+        codigo: 'ALM-001',
+        mensaje: 'El nombre del almacén es obligatorio',
+        modulo: 'Almacenes',
+        detalle: 'Debe proporcionar un nombre no vacío para el almacén',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const nombreTrim = nombre.trim();
+
+    // Validar que no se duplique el nombre
+    const dupCheck = await pool.query(
+      'SELECT id FROM almacenes WHERE LOWER(nombre) = LOWER($1)',
+      [nombreTrim]
+    );
+    if (dupCheck.rows.length > 0) {
+      return res.status(409).json({
+        codigo: 'ALM-002',
+        mensaje: 'Ya existe un almacén con ese nombre',
+        modulo: 'Almacenes',
+        detalle: `El nombre "${nombreTrim}" ya está registrado en el sistema`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO almacenes (nombre, ubicacion, activo)
+       VALUES ($1, $2, true)
+       RETURNING *`,
+      [nombreTrim, ubicacion || null]
+    );
+
+    res.status(201).json({ datos: result.rows[0], mensaje: 'Almacén creado exitosamente' });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({
+        codigo: 'ALM-002',
+        mensaje: 'Ya existe un almacén con ese nombre',
+        modulo: 'Almacenes',
+        detalle: 'El nombre proporcionado ya está registrado',
+        timestamp: new Date().toISOString(),
+      });
+    }
+    next(new AppError('ALM-003', err.message));
+  }
+});
+
+/**
+ * PUT /api/v1/almacenes/:id
+ * Actualizar un almacén existente.
+ */
+app.put('/api/v1/almacenes/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { nombre, ubicacion, activo } = req.body;
+
+    // Validar nombre obligatorio
+    if (!nombre || typeof nombre !== 'string' || nombre.trim() === '') {
+      return res.status(400).json({
+        codigo: 'ALM-001',
+        mensaje: 'El nombre del almacén es obligatorio',
+        modulo: 'Almacenes',
+        detalle: 'Debe proporcionar un nombre no vacío para el almacén',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const nombreTrim = nombre.trim();
+
+    // Validar que no se duplique el nombre (excluyendo el mismo registro)
+    const dupCheck = await pool.query(
+      'SELECT id FROM almacenes WHERE LOWER(nombre) = LOWER($1) AND id != $2',
+      [nombreTrim, id]
+    );
+    if (dupCheck.rows.length > 0) {
+      return res.status(409).json({
+        codigo: 'ALM-002',
+        mensaje: 'Ya existe otro almacén con ese nombre',
+        modulo: 'Almacenes',
+        detalle: `El nombre "${nombreTrim}" ya está registrado en otro almacén`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const result = await pool.query(
+      `UPDATE almacenes SET
+        nombre = $1,
+        ubicacion = $2,
+        activo = COALESCE($3, activo),
+        updated_at = NOW()
+       WHERE id = $4 RETURNING *`,
+      [nombreTrim, ubicacion || null, activo !== false ? true : false, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        codigo: 'ALM-004',
+        mensaje: 'Almacén no encontrado',
+        modulo: 'Almacenes',
+        detalle: `No se encontró un almacén con ID ${id}`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    res.json({ datos: result.rows[0], mensaje: 'Almacén actualizado exitosamente' });
+  } catch (err) {
+    next(new AppError('ALM-005', err.message));
+  }
+});
+/**
  * GET /api/v1/cuentas-contables
  * Listar todas las cuentas contables. Devuelve un array JSON plano.
  */
 app.get('/api/v1/cuentas-contables', authMiddleware, async (req, res, next) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM cuentas_contables ORDER BY codigo'
-    );
+    const { search } = req.query;
+    let query = 'SELECT * FROM cuentas_contables';
+    const params = [];
+    if (search) {
+      query += ` WHERE nombre ILIKE $1 OR codigo::text ILIKE $1`;
+      params.push(`%${search}%`);
+    }
+    query += ' ORDER BY codigo';
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
     next(new AppError('CTB-001', err.message));
+  }
+});
+
+/**
+ * POST /api/v1/cuentas-contables
+ * Crear una nueva cuenta contable.
+ */
+app.post('/api/v1/cuentas-contables', authMiddleware, async (req, res, next) => {
+  try {
+    const { codigo, nombre, nivel, padre_id, tipo, naturaleza, activo } = req.body;
+    if (!codigo || !nombre || !tipo) {
+      return res.status(400).json({
+        exito: false, error: 'Código, nombre y tipo son requeridos'
+      });
+    }
+    const result = await pool.query(
+      `INSERT INTO cuentas_contables (codigo, nombre, nivel, padre_id, tipo, naturaleza, activo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [codigo, nombre, parseInt(nivel) || 1, padre_id || null, tipo, naturaleza || null, activo !== false]
+    );
+    res.status(201).json({ datos: result.rows[0], mensaje: 'Cuenta creada exitosamente' });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({
+        exito: false, error: 'El código de cuenta ya existe'
+      });
+    }
+    next(new AppError('CTB-002', err.message));
+  }
+});
+
+/**
+ * PUT /api/v1/cuentas-contables/:id
+ * Actualizar una cuenta contable existente.
+ */
+app.put('/api/v1/cuentas-contables/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { codigo, nombre, nivel, padre_id, tipo, naturaleza, activo } = req.body;
+    if (!codigo || !nombre || !tipo) {
+      return res.status(400).json({
+        exito: false, error: 'Código, nombre y tipo son requeridos'
+      });
+    }
+    const result = await pool.query(
+      `UPDATE cuentas_contables SET codigo = $1, nombre = $2, nivel = $3, padre_id = $4,
+              tipo = $5, naturaleza = $6, activo = $7, updated_at = NOW()
+       WHERE id = $8 RETURNING *`,
+      [codigo, nombre, parseInt(nivel) || 1, padre_id || null, tipo, naturaleza || null, activo !== false, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        exito: false, error: 'Cuenta contable no encontrada'
+      });
+    }
+    res.json({ datos: result.rows[0], mensaje: 'Cuenta actualizada exitosamente' });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({
+        exito: false, error: 'El código de cuenta ya existe'
+      });
+    }
+    next(new AppError('CTB-003', err.message));
   }
 });
 

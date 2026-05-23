@@ -223,6 +223,43 @@
             </v-row>
 
             <v-divider class="my-3" />
+            <h4 class="text-subtitle-1 font-weight-bold mb-2">Configuración de Crédito</h4>
+            <v-row>
+              <v-col cols="12" md="4">
+                <v-text-field
+                  v-model.number="formData.limite_credito"
+                  label="Límite de Crédito"
+                  type="number"
+                  variant="outlined"
+                  density="compact"
+                  prefix="$"
+                  min="0"
+                  step="0.01"
+                />
+              </v-col>
+              <v-col cols="12" md="4">
+                <v-text-field
+                  v-model.number="formData.dias_credito_default"
+                  label="Días de Crédito por Defecto"
+                  type="number"
+                  variant="outlined"
+                  density="compact"
+                  min="0"
+                  step="1"
+                />
+              </v-col>
+              <v-col cols="12" md="4">
+                <v-select
+                  v-model="formData.estatus_credito"
+                  :items="['activo', 'suspendido', 'bloqueado']"
+                  label="Estatus Crediticio"
+                  variant="outlined"
+                  density="compact"
+                />
+              </v-col>
+            </v-row>
+
+            <v-divider class="my-3" />
             <h4 class="text-subtitle-1 font-weight-bold mb-2">Roles</h4>
             <v-row>
               <v-col v-for="rol in rolesDisponibles" :key="rol" cols="6" md="3">
@@ -247,6 +284,124 @@
                 />
               </v-col>
             </v-row>
+
+            <!-- Configuración Contable Granular (V16) -->
+            <template v-if="editando">
+              <v-divider class="my-3" />
+              <h4 class="text-subtitle-1 font-weight-bold mb-2">
+                <v-icon class="mr-1" color="primary">mdi-book-account</v-icon>
+                Configuración Contable
+              </h4>
+              <p class="text-caption text-medium-emphasis mb-3">
+                Asigna cuentas contables específicas para esta entidad según el rol y concepto.
+              </p>
+              <v-row>
+                <v-col cols="12" md="6">
+                  <v-autocomplete
+                    v-model="contabilidadConfig.proveedor"
+                    :items="cuentasContables"
+                    item-title="nombre_completo"
+                    item-value="id"
+                    label="Proveedor (proveedor)"
+                    variant="outlined"
+                    density="compact"
+                    clearable
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" md="6">
+                  <v-autocomplete
+                    v-model="contabilidadConfig.anticipo_proveedor"
+                    :items="cuentasContables"
+                    item-title="nombre_completo"
+                    item-value="id"
+                    label="Anticipo Proveedor"
+                    variant="outlined"
+                    density="compact"
+                    clearable
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" md="6">
+                  <v-autocomplete
+                    v-model="contabilidadConfig.acreedor"
+                    :items="cuentasContables"
+                    item-title="nombre_completo"
+                    item-value="id"
+                    label="Acreedor (gastos)"
+                    variant="outlined"
+                    density="compact"
+                    clearable
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" md="6">
+                  <v-autocomplete
+                    v-model="contabilidadConfig.anticipo_acreedor"
+                    :items="cuentasContables"
+                    item-title="nombre_completo"
+                    item-value="id"
+                    label="Anticipo Acreedor"
+                    variant="outlined"
+                    density="compact"
+                    clearable
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" md="6">
+                  <v-autocomplete
+                    v-model="contabilidadConfig.cliente"
+                    :items="cuentasContables"
+                    item-title="nombre_completo"
+                    item-value="id"
+                    label="Cliente (cliente)"
+                    variant="outlined"
+                    density="compact"
+                    clearable
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" md="6">
+                  <v-autocomplete
+                    v-model="contabilidadConfig.anticipo_cliente"
+                    :items="cuentasContables"
+                    item-title="nombre_completo"
+                    item-value="id"
+                    label="Anticipo Cliente"
+                    variant="outlined"
+                    density="compact"
+                    clearable
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" md="6">
+                  <v-autocomplete
+                    v-model="contabilidadConfig.deudor"
+                    :items="cuentasContables"
+                    item-title="nombre_completo"
+                    item-value="id"
+                    label="Deudor (deudores)"
+                    variant="outlined"
+                    density="compact"
+                    clearable
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" md="6">
+                  <v-autocomplete
+                    v-model="contabilidadConfig.anticipo_deudor"
+                    :items="cuentasContables"
+                    item-title="nombre_completo"
+                    item-value="id"
+                    label="Anticipo Deudor"
+                    variant="outlined"
+                    density="compact"
+                    clearable
+                    hide-details
+                  />
+                </v-col>
+              </v-row>
+            </template>
           </v-form>
         </v-card-text>
         <v-card-actions class="pa-4 pt-0">
@@ -303,6 +458,18 @@ const columnas = [
   { title: 'Acciones', key: 'acciones', sortable: false, align: 'center', width: '80px' },
 ]
 
+const cuentasContables = ref([])
+const contabilidadConfig = ref({
+  proveedor: null,
+  anticipo_proveedor: null,
+  acreedor: null,
+  anticipo_acreedor: null,
+  cliente: null,
+  anticipo_cliente: null,
+  deudor: null,
+  anticipo_deudor: null,
+})
+
 const formData = ref({
   razon_social: '',
   nombre_comercial: '',
@@ -315,6 +482,9 @@ const formData = ref({
   cp: '',
   roles: [],
   activo: true,
+  limite_credito: 0,
+  dias_credito_default: 0,
+  estatus_credito: 'activo',
 })
 
 function capitalize(str) {
@@ -350,7 +520,48 @@ async function cargarDatos() {
 }
 
 
-function abrirDialogo(item) {
+async function cargarCuentasContables() {
+  try {
+    const res = await apiClient.get('/api/v1/contabilidad/cuentas?limit=500')
+    const cuentas = res.data?.datos || res.data || []
+    cuentasContables.value = cuentas.map(c => ({
+      ...c,
+      nombre_completo: `${c.codigo} - ${c.nombre}`,
+    }))
+  } catch (err) {
+    console.error('Error al cargar cuentas contables:', err)
+  }
+}
+
+async function cargarContabilidadConfig(entidadId) {
+  try {
+    const res = await apiClient.get(`/api/v1/entidades/${entidadId}/contabilidad`)
+    const config = res.data?.datos || res.data || []
+    const map = {}
+    for (const item of config) {
+      map[item.rol_contable] = item.cuenta_contable_id
+    }
+    contabilidadConfig.value = {
+      proveedor: map.proveedor || null,
+      anticipo_proveedor: map.anticipo_proveedor || null,
+      acreedor: map.acreedor || null,
+      anticipo_acreedor: map.anticipo_acreedor || null,
+      cliente: map.cliente || null,
+      anticipo_cliente: map.anticipo_cliente || null,
+      deudor: map.deudor || null,
+      anticipo_deudor: map.anticipo_deudor || null,
+    }
+  } catch (err) {
+    console.error('Error al cargar configuración contable:', err)
+    contabilidadConfig.value = {
+      proveedor: null, anticipo_proveedor: null, acreedor: null,
+      anticipo_acreedor: null, cliente: null, anticipo_cliente: null,
+      deudor: null, anticipo_deudor: null,
+    }
+  }
+}
+
+async function abrirDialogo(item) {
   editando.value = !!item
   entidadEditando.value = item
   if (item) {
@@ -366,7 +577,12 @@ function abrirDialogo(item) {
       cp: item.cp || '',
       roles: item.roles || [],
       activo: item.activo !== false,
+      limite_credito: item.limite_credito || 0,
+      dias_credito_default: item.dias_credito_default || 0,
+      estatus_credito: item.estatus_credito || 'activo',
     }
+    await cargarCuentasContables()
+    await cargarContabilidadConfig(item.id)
   } else {
     formData.value = {
       razon_social: '',
@@ -380,6 +596,14 @@ function abrirDialogo(item) {
       cp: '',
       roles: [],
       activo: true,
+      limite_credito: 0,
+      dias_credito_default: 0,
+      estatus_credito: 'activo',
+    }
+    contabilidadConfig.value = {
+      proveedor: null, anticipo_proveedor: null, acreedor: null,
+      anticipo_acreedor: null, cliente: null, anticipo_cliente: null,
+      deudor: null, anticipo_deudor: null,
     }
   }
   dialogoVisible.value = true
@@ -403,6 +627,20 @@ async function guardar() {
       snackbar.value = { show: true, text: 'Entidad creada exitosamente', color: 'success' }
     }
 
+    // Guardar configuración contable si es edición
+    if (editando.value && entidadEditando.value) {
+      const configPayload = Object.entries(contabilidadConfig.value)
+        .filter(([_, v]) => v != null)
+        .map(([rol, cuenta]) => ({ rol_contable: rol, cuenta_contable_id: cuenta }))
+
+      // También enviar los null para limpiar registros existentes
+      const allConfigPayload = Object.entries(contabilidadConfig.value)
+        .map(([rol, cuenta]) => ({ rol_contable: rol, cuenta_contable_id: cuenta }))
+
+      await apiClient.put(`/api/v1/entidades/${entidadEditando.value.id}/contabilidad`, {
+        configuraciones: allConfigPayload
+      })
+    }
 
     dialogoVisible.value = false
     await cargarDatos()

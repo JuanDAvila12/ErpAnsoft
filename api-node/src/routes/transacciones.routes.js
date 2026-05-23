@@ -4,6 +4,7 @@ const { authMiddleware } = require('../middleware/auth');
 const TransaccionesModel = require('../models/transacciones.model');
 const pool = require('../db');
 const { AppError } = require('../middleware/errorHandler');
+const { generarPDF } = require('../services/pdfGenerator');
 
 /**
  * @swagger
@@ -60,6 +61,7 @@ router.post('/', authMiddleware, async (req, res, next) => {
       'ajuste_inventario', 'entrada_inventario', 'salida_inventario',
       'pago', 'cobro',
       'cotizacion_compra', 'recepcion_compra', 'traspaso', 'recepcion_traspaso',
+      'asiento_manual',
     ];
     if (!tipo || !tiposValidos.includes(tipo)) {
       return res.status(400).json({
@@ -70,7 +72,8 @@ router.post('/', authMiddleware, async (req, res, next) => {
         timestamp: new Date().toISOString(),
       });
     }
-    if (!datos.articulos?.length) {
+    // Para asiento_manual, no se requieren artículos
+    if (tipo !== 'asiento_manual' && tipo !== 'cobro' && tipo !== 'pago' && !datos.articulos?.length) {
       return res.status(400).json({
         codigo: 'TRANS-008',
         mensaje: 'Artículos requeridos',
@@ -177,6 +180,64 @@ router.get('/:id/historial', authMiddleware, async (req, res, next) => {
     res.json(result.rows);
   } catch (err) {
     next(new AppError('TRANS-006', err.message));
+  }
+});
+
+// GET /:id/pdf - Generar PDF de la transacción (debe ir ANTES de /:id genérica)
+router.get('/:id/pdf', authMiddleware, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    console.log(`[PDF-ROUTE] ===== INICIO generación PDF para transacción ID ${id} =====`);
+
+    // Verificar que la transacción exista
+    const transaccion = await TransaccionesModel.findById(id);
+    if (!transaccion) {
+      console.error(`[PDF-ROUTE] Transacción ID ${id} no encontrada`);
+      return res.status(404).json({
+        codigo: 'TRANS-003',
+        mensaje: 'Transacción no encontrada',
+        modulo: 'Transacciones',
+        detalle: `No se encontró transacción con ID ${id}`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    console.log(`[PDF-ROUTE] Transacción encontrada: tipo="${transaccion.tipo}", folio="${transaccion.folio}"`);
+    console.log(`[PDF-ROUTE] Llamando a generarPDF(tipo="${transaccion.tipo}", id=${id})`);
+
+    const pdfBuffer = await generarPDF(transaccion.tipo, id);
+
+    console.log(`[PDF-ROUTE] PDF generado, tamaño: ${pdfBuffer.length} bytes`);
+    console.log(`[PDF-ROUTE] Primeros bytes del buffer: ${pdfBuffer.slice(0, 8).toString('hex')}`);
+    console.log(`[PDF-ROUTE] Buffer es Buffer? ${Buffer.isBuffer(pdfBuffer)}`);
+
+    if (pdfBuffer.length < 100) {
+      console.error(`[PDF-ROUTE] ERROR: PDF demasiado pequeño (${pdfBuffer.length} bytes). Contenido: ${pdfBuffer.toString().substring(0, 200)}`);
+      return res.status(500).json({
+        exito: false,
+        error: 'El PDF generado está vacío o corrupto',
+        mensaje: 'Error al generar el PDF. El buffer generado es demasiado pequeño.',
+      });
+    }
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${transaccion.tipo}_${id}.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    console.log(`[PDF-ROUTE] Enviando PDF: Content-Length=${pdfBuffer.length}`);
+    res.send(pdfBuffer);
+    console.log(`[PDF-ROUTE] ===== FIN generación PDF exitosa =====`);
+  } catch (err) {
+    console.error('[PDF-ROUTE] Error al generar PDF:', err);
+    console.error('[PDF-ROUTE] Stack:', err.stack);
+    res.status(500).json({
+      exito: false,
+      error: err.message,
+      mensaje: 'Error al generar el PDF. Verifique que Puppeteer esté instalado correctamente.',
+    });
   }
 });
 

@@ -53,6 +53,20 @@
               <v-autocomplete v-model="nuevoDocumento.proveedor_id" :items="proveedores" item-title="razon_social" item-value="id" label="Proveedor *" variant="outlined" :loading="cargandoCatalogos" :disabled="cargandoCatalogos" no-data-text="No se encontraron proveedores" />
             </v-col>
             <v-col cols="12" sm="6"><v-select v-model="nuevoDocumento.metodo_pago" :items="metodosPago" label="Método de pago" variant="outlined" /></v-col>
+            <v-col cols="12" sm="6">
+              <v-select
+                v-model="nuevoDocumento.tipo_concepto"
+                :items="[
+                  { title: 'Estándar', value: 'estandar' },
+                  { title: 'Gasto', value: 'gasto' },
+                ]"
+                label="Concepto"
+                variant="outlined"
+                density="compact"
+                item-title="title"
+                item-value="value"
+              />
+            </v-col>
             <v-col cols="12" sm="6"><v-select v-model="nuevoDocumento.almacen_id" :items="almacenes" item-title="nombre" item-value="id" label="Almacén" variant="outlined" /></v-col>
           </v-row>
           <v-divider class="my-3" />
@@ -107,7 +121,7 @@ const headers = [
   { title: 'Fecha', key: 'fecha', sortable: true }, { title: 'Total', key: 'total', sortable: true },
   { title: 'Estado', key: 'estado', sortable: true }, { title: 'Acciones', key: 'acciones', sortable: false },
 ]
-const nuevoDocumento = ref({ proveedor_id: null, metodo_pago: 'transferencia', almacen_id: null, articulos: [] })
+const nuevoDocumento = ref({ proveedor_id: null, metodo_pago: 'transferencia', almacen_id: null, tipo_concepto: 'estandar', articulos: [] })
 
 function agregarLinea() { nuevoDocumento.value.articulos.push({ articulo_id: null, cantidad: 1, precio_unitario: 0 }) }
 function calcularTotal() { return nuevoDocumento.value.articulos.reduce((s, l) => s + (parseFloat(l.cantidad||0) * parseFloat(l.precio_unitario||0)), 0) }
@@ -166,6 +180,7 @@ async function guardar() {
     await apiClient.post('/api/v1/transacciones', {
       tipo: 'compra', entidad_proveedor_id: nuevoDocumento.value.proveedor_id,
       metodo_pago: nuevoDocumento.value.metodo_pago, almacen_id: nuevoDocumento.value.almacen_id,
+      tipo_concepto: nuevoDocumento.value.tipo_concepto || 'estandar',
       articulos: nuevoDocumento.value.articulos.map(l => ({ articulo_id: l.articulo_id?.id||l.articulo_id, cantidad: parseFloat(l.cantidad), precio_unitario: parseFloat(l.precio_unitario) })),
     })
     snackbar.value = { show: true, mensaje: 'Compra creada', color: 'success' }

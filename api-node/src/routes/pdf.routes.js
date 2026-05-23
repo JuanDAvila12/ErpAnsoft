@@ -2,256 +2,305 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
 const { checkPermission } = require('../middleware/permissions');
-const pool = require('../db');
+const { generarPDF } = require('../services/pdfGenerator');
 
 /**
  * ============================================
- * GENERACIÓN DE PDF
+ * GENERACIÓN DE PDF (con Puppeteer)
  * ============================================
+ *
+ * POST /api/v1/generar-pdf
+ * Recibe: { tipo, id }
+ * Devuelve: application/pdf (buffer del PDF generado)
  */
+/**
+ * GET /api/v1/generar-pdf
+ * Alternativa GET que acepta token como query param para visualizar PDF en nueva pestaña
+ */
+router.get('/', async (req, res, next) => {
+  try {
+    const { tipo, id, token } = req.query;
+    if (!tipo || !id) {
+      return res.status(400).json({ exito: false, error: 'tipo e id son requeridos' });
+    }
+
+    // Validar token desde query param
+    const jwt = require('jsonwebtoken');
+    const secret = process.env.JWT_SECRET || 'spi_erp_jwt_secret_key_2026';
+    try {
+      jwt.verify(token, secret);
+    } catch (e) {
+      return res.status(401).json({ exito: false, error: 'Token inválido o expirado' });
+    }
+
+    console.log(`[PDF-GET] Generando PDF para tipo="${tipo}" id=${id}`);
+
+    const pdfBuffer = await generarPDF(tipo, id);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${tipo}_${id}.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[PDF-GET] Error al generar PDF:', err);
+    res.status(500).json({
+      exito: false,
+      error: err.message,
+    });
+  }
+});
 
 /**
  * POST /api/v1/generar-pdf
- * Generar PDF de una transacción
  * Recibe: { tipo, id }
- * Devuelve: HTML renderizado para convertir a PDF
+ * Devuelve: application/pdf (buffer del PDF generado)
  */
-router.post('/', authMiddleware, checkPermission('pdf.generar'), async (req, res) => {
+router.post('/', authMiddleware, async (req, res, next) => {
   try {
     const { tipo, id } = req.body;
     if (!tipo || !id) {
       return res.status(400).json({ exito: false, error: 'tipo e id son requeridos' });
     }
 
-    // Obtener datos de la transacción
-    const transResult = await pool.query(
-      `SELECT t.*,
-              ec.razon_social AS cliente_nombre, ec.rfc AS cliente_rfc, ec.direccion AS cliente_direccion,
-              ep.razon_social AS proveedor_nombre, ep.rfc AS proveedor_rfc, ep.direccion AS proveedor_direccion,
-              sd.serie, a.nombre AS almacen_nombre
-       FROM transacciones t
-       LEFT JOIN entidades ec ON ec.id = t.entidad_cliente_id
-       LEFT JOIN entidades ep ON ep.id = t.entidad_proveedor_id
-       LEFT JOIN series_documentos sd ON sd.id = t.serie_id
-       LEFT JOIN almacenes a ON a.id = t.almacen_id
-       WHERE t.id = $1`,
-      [id]
-    );
-    if (transResult.rows.length === 0) {
-      return res.status(404).json({ exito: false, error: 'Transacción no encontrada' });
-    }
-    const transaccion = transResult.rows[0];
+    console.log(`[PDF] Generando PDF para tipo="${tipo}" id=${id}`);
 
-    // Obtener detalles
-    const detResult = await pool.query(
-      `SELECT td.*, art.nombre AS articulo_nombre, art.sku AS articulo_sku
-       FROM transacciones_detalle td
-       LEFT JOIN articulos art ON art.id = td.articulo_id
-       WHERE td.transaccion_id = $1
-       ORDER BY td.id`,
-      [id]
-    );
-    const detalles = detResult.rows;
+    const pdfBuffer = await generarPDF(tipo, id);
 
-    // Obtener configuración de la empresa
-    const empResult = await pool.query('SELECT * FROM empresa_configuracion ORDER BY id DESC LIMIT 1');
-    const empresa = empResult.rows[0] || {};
-
-    // Generar HTML según el tipo
-    const html = generarPlantillaHTML(tipo, transaccion, detalles, empresa);
-
-    res.json({
-      exito: true,
-      datos: {
-        html,
-        titulo: `${tipo.toUpperCase()} - ${transaccion.folio}`,
-        filename: `${transaccion.folio}.pdf`,
-      }
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${tipo}_${id}.pdf"`,
+      'Content-Length': pdfBuffer.length,
     });
+
+    res.send(pdfBuffer);
   } catch (err) {
-    console.error('Error al generar PDF:', err);
-    res.status(500).json({ exito: false, error: err.message });
+    console.error('[PDF] Error al generar PDF:', err);
+    res.status(500).json({
+      exito: false,
+      error: err.message,
+      mensaje: 'Error al generar el PDF. Verifique que Puppeteer esté instalado correctamente.',
+    });
   }
 });
 
 /**
- * GET /api/v1/generar-pdf/plantilla/:tipo
- * Obtener plantilla HTML de ejemplo para un tipo de documento
+ * GET /api/v1/generar-pdf/vista-previa
+ * Alternativa GET para vista previa, acepta token y html como query params
  */
-router.get('/plantilla/:tipo', authMiddleware, async (req, res) => {
+router.get('/vista-previa', async (req, res, next) => {
   try {
-    const { tipo } = req.params;
-    const empResult = await pool.query('SELECT * FROM empresa_configuracion ORDER BY id DESC LIMIT 1');
-    const empresa = empResult.rows[0] || {};
+    const { tipo, html, token } = req.query;
+    if (!tipo || !html) {
+      return res.status(400).json({ exito: false, error: 'tipo y html son requeridos' });
+    }
 
-    const html = generarPlantillaHTML(tipo, null, [], empresa);
-    res.json({ exito: true, datos: { html } });
+    // Validar token
+    const jwt = require('jsonwebtoken');
+    const secret = process.env.JWT_SECRET || 'spi_erp_jwt_secret_key_2026';
+    try {
+      jwt.verify(token, secret);
+    } catch (e) {
+      return res.status(401).json({ exito: false, error: 'Token inválido o expirado' });
+    }
+
+    const contenido_html = decodeURIComponent(html);
+
+    // Datos de ejemplo para vista previa
+    const datosEjemplo = {
+      folio: 'PREVIEW-001',
+      fecha: new Date().toISOString(),
+      tipo,
+      serie: 'A',
+      metodo_pago: 'Transferencia',
+      almacen_nombre: 'Almacén Principal',
+      fecha_vencimiento: new Date(Date.now() + 15 * 86400000).toISOString(),
+      comentario: 'Esta es una vista previa con datos de ejemplo.',
+      cliente_nombre: 'Cliente Ejemplo S.A. de C.V.',
+      cliente_rfc: 'XAXA010101XXX',
+      cliente_direccion: 'Av. Ejemplo #123, Col. Centro, CDMX',
+      cliente_telefono: '55-1234-5678',
+      cliente_email: 'cliente@ejemplo.com',
+      asientos_contables: [],
+      origen: null,
+    };
+
+    const detallesEjemplo = [
+      { articulo_nombre: 'Artículo de Prueba 1', articulo_sku: 'SKU001', cantidad: 5, precio_unitario: 150.00, subtotal: 750.00 },
+      { articulo_nombre: 'Artículo de Prueba 2', articulo_sku: 'SKU002', cantidad: 3, precio_unitario: 250.50, subtotal: 751.50 },
+    ];
+
+    const empresaEjemplo = {
+      razon_social: 'Mi Empresa S.A. de C.V.',
+      rfc: 'EMP-123456-XYZ',
+      direccion: 'Calle Principal #456, Col. Centro',
+      telefono: '55-9876-5432',
+      email: 'info@miempresa.com',
+      logo_url: null,
+      pie_pagina: 'Gracias por su preferencia',
+      terminos_legales: 'Este documento es una representación preliminar.',
+    };
+
+    const { reemplazarVariables } = require('../services/pdfGenerator');
+    const htmlContent = reemplazarVariables(contenido_html, datosEjemplo, detallesEjemplo, empresaEjemplo);
+
+    // Generar PDF con Puppeteer
+    let puppeteer;
+    try {
+      puppeteer = require('puppeteer');
+    } catch (e) {
+      return res.status(500).json({ exito: false, error: 'Puppeteer no está instalado.' });
+    }
+
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    });
+
+    try {
+      const page = await browser.newPage();
+      console.log(`[PDF-VISTA] Setting HTML content (${htmlContent.length} chars)...`);
+      await page.setContent(htmlContent, { waitUntil: 'networkidle0', timeout: 30000 });
+      console.log(`[PDF-VISTA] HTML content loaded`);
+
+      const pdfBuffer = await page.pdf({
+        format: 'Letter',
+        margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+        printBackground: true,
+        displayHeaderFooter: true,
+        headerTemplate: '<span></span>',
+        footerTemplate: `
+          <div style="width:100%;text-align:center;font-size:8px;color:#aaa;padding:5px 20px;">
+            <span>Vista Previa - Página <span class="pageNumber"></span> de <span class="totalPages"></span></span>
+          </div>
+        `,
+      });
+
+      console.log(`[PDF-VISTA] PDF generated, size: ${pdfBuffer.length} bytes`);
+
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'inline; filename="vista-previa.pdf"',
+        'Content-Length': pdfBuffer.length,
+      });
+      res.send(pdfBuffer);
+    } finally {
+      await browser.close();
+    }
   } catch (err) {
-    console.error('Error al obtener plantilla:', err);
+    console.error('[PDF-GET] Error al generar vista previa:', err);
     res.status(500).json({ exito: false, error: err.message });
   }
 });
 
 /**
- * Genera la plantilla HTML para un tipo de documento
+ * POST /api/v1/generar-pdf/vista-previa
+ * Genera PDF de vista previa para una plantilla (con datos de ejemplo)
+ * Recibe: { tipo, contenido_html }
+ * Devuelve: application/pdf
  */
-function generarPlantillaHTML(tipo, transaccion, detalles, empresa) {
-  const logoHtml = empresa.logo_url
-    ? `<img src="${empresa.logo_url}" alt="Logo" style="max-height:80px;max-width:200px;" />`
-    : '<h2 style="color:#1976D2;">' + (empresa.razon_social || 'Mi Empresa') + '</h2>';
+router.post('/vista-previa', authMiddleware, async (req, res, next) => {
+  try {
+    const { tipo, contenido_html } = req.body;
+    if (!tipo || !contenido_html) {
+      return res.status(400).json({ exito: false, error: 'tipo y contenido_html son requeridos' });
+    }
 
-  const empresaInfo = `
-    <div style="font-size:11px;color:#555;">
-      ${empresa.razon_social || ''}<br/>
-      RFC: ${empresa.rfc || ''}<br/>
-      ${empresa.direccion || ''}<br/>
-      Tel: ${empresa.telefono || ''} | Email: ${empresa.email || ''}
-    </div>
-  `;
+    // Datos de ejemplo para vista previa
+    const datosEjemplo = {
+      folio: 'PREVIEW-001',
+      fecha: new Date().toISOString(),
+      tipo,
+      serie: 'A',
+      metodo_pago: 'Transferencia',
+      almacen_nombre: 'Almacén Principal',
+      fecha_vencimiento: new Date(Date.now() + 15 * 86400000).toISOString(),
+      comentario: 'Esta es una vista previa con datos de ejemplo.',
+      cliente_nombre: 'Cliente Ejemplo S.A. de C.V.',
+      cliente_rfc: 'XAXA010101XXX',
+      cliente_direccion: 'Av. Ejemplo #123, Col. Centro, CDMX',
+      cliente_telefono: '55-1234-5678',
+      cliente_email: 'cliente@ejemplo.com',
+      asientos_contables: [],
+      origen: null,
+    };
 
-  let tipoDoc = '';
-  let entidadLabel = '';
-  let entidadNombre = '';
-  let entidadRfc = '';
-  let entidadDireccion = '';
+    const detallesEjemplo = [
+      {
+        articulo_nombre: 'Artículo de Prueba 1',
+        articulo_sku: 'SKU001',
+        cantidad: 5,
+        precio_unitario: 150.00,
+        subtotal: 750.00,
+      },
+      {
+        articulo_nombre: 'Artículo de Prueba 2',
+        articulo_sku: 'SKU002',
+        cantidad: 3,
+        precio_unitario: 250.50,
+        subtotal: 751.50,
+      },
+    ];
 
-  switch (tipo) {
-    case 'cotizacion':
-    case 'orden_venta':
-    case 'venta':
-      tipoDoc = tipo === 'cotizacion' ? 'COTIZACIÓN' : tipo === 'orden_venta' ? 'ORDEN DE VENTA' : 'FACTURA';
-      entidadLabel = 'Cliente';
-      entidadNombre = transaccion?.cliente_nombre || '';
-      entidadRfc = transaccion?.cliente_rfc || '';
-      entidadDireccion = transaccion?.cliente_direccion || '';
-      break;
-    case 'cotizacion_compra':
-    case 'orden_compra':
-    case 'compra':
-      tipoDoc = tipo === 'cotizacion_compra' ? 'COTIZACIÓN DE COMPRA' : tipo === 'orden_compra' ? 'ORDEN DE COMPRA' : 'COMPRA';
-      entidadLabel = 'Proveedor';
-      entidadNombre = transaccion?.proveedor_nombre || '';
-      entidadRfc = transaccion?.proveedor_rfc || '';
-      entidadDireccion = transaccion?.proveedor_direccion || '';
-      break;
-    case 'traspaso':
-      tipoDoc = 'TRASPASO';
-      entidadLabel = 'Almacén Origen';
-      entidadNombre = transaccion?.almacen_nombre || '';
-      break;
-    default:
-      tipoDoc = tipo.toUpperCase();
-      entidadLabel = 'Entidad';
+    const empresaEjemplo = {
+      razon_social: 'Mi Empresa S.A. de C.V.',
+      rfc: 'EMP-123456-XYZ',
+      direccion: 'Calle Principal #456, Col. Centro',
+      telefono: '55-9876-5432',
+      email: 'info@miempresa.com',
+      logo_url: null,
+      pie_pagina: 'Gracias por su preferencia',
+      terminos_legales: 'Este documento es una representación preliminar.',
+    };
+
+    const { reemplazarVariables } = require('../services/pdfGenerator');
+    const html = reemplazarVariables(contenido_html, datosEjemplo, detallesEjemplo, empresaEjemplo);
+
+    // Generar PDF con Puppeteer
+    let puppeteer;
+    try {
+      puppeteer = require('puppeteer');
+    } catch (e) {
+      return res.status(500).json({ exito: false, error: 'Puppeteer no está instalado. Ejecute: npm install puppeteer' });
+    }
+
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    });
+
+    try {
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+
+      const pdfBuffer = await page.pdf({
+        format: 'Letter',
+        margin: { top: '20mm', bottom: '20mm', left: '15mm', right: '15mm' },
+        printBackground: true,
+        displayHeaderFooter: true,
+        headerTemplate: '<span></span>',
+        footerTemplate: `
+          <div style="width:100%;text-align:center;font-size:8px;color:#aaa;padding:5px 20px;">
+            <span>Vista Previa - Página <span class="pageNumber"></span> de <span class="totalPages"></span></span>
+          </div>
+        `,
+      });
+
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': 'inline; filename="vista-previa.pdf"',
+        'Content-Length': pdfBuffer.length,
+      });
+      res.send(pdfBuffer);
+    } finally {
+      await browser.close();
+    }
+  } catch (err) {
+    console.error('[PDF] Error al generar vista previa:', err);
+    res.status(500).json({ exito: false, error: err.message });
   }
-
-  const detalleRows = detalles.map((d, i) => `
-    <tr>
-      <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${i + 1}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #ddd;">${d.articulo_nombre || '—'}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${d.articulo_sku || '—'}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:center;">${d.cantidad}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right;">$${Number(d.precio_unitario).toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
-      <td style="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right;">$${Number(d.subtotal).toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
-    </tr>
-  `).join('');
-
-  const total = detalles.reduce((s, d) => s + Number(d.subtotal || 0), 0);
-
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <style>
-    @page { margin: 2.54cm; }
-    body { font-family: 'Arial', sans-serif; font-size: 12px; color: #333; margin: 0; padding: 20px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #1976D2; }
-    .header-left { flex: 1; }
-    .header-right { text-align: right; }
-    .titulo-documento { font-size: 24px; font-weight: bold; color: #1976D2; margin: 10px 0; }
-    .info-section { display: flex; justify-content: space-between; margin-bottom: 30px; }
-    .info-box { width: 48%; padding: 15px; background: #f5f5f5; border-radius: 5px; }
-    .info-box h4 { margin: 0 0 8px 0; color: #1976D2; font-size: 13px; }
-    .info-box p { margin: 3px 0; font-size: 11px; }
-    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-    th { background: #1976D2; color: white; padding: 10px 8px; text-align: left; font-size: 11px; }
-    td { padding: 8px; border-bottom: 1px solid #eee; }
-    .totales { width: 300px; margin-left: auto; margin-top: 20px; }
-    .totales td { padding: 6px 10px; border: none; }
-    .totales .total-final { font-size: 18px; font-weight: bold; color: #1976D2; }
-    .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 10px; color: #888; }
-    .firmas { display: flex; justify-content: space-between; margin-top: 60px; }
-    .firma { text-align: center; width: 45%; }
-    .firma-linea { border-top: 1px solid #333; margin-top: 40px; padding-top: 8px; font-size: 11px; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div class="header-left">
-      ${logoHtml}
-      ${empresaInfo}
-    </div>
-    <div class="header-right">
-      <div class="titulo-documento">${tipoDoc}</div>
-      <div style="font-size:14px;font-weight:bold;color:#333;">${transaccion ? transaccion.folio : 'FOLIO-0000'}</div>
-      <div style="font-size:11px;color:#666;margin-top:5px;">
-        ${transaccion ? new Date(transaccion.fecha).toLocaleDateString('es-MX', {year:'numeric',month:'long',day:'numeric'}) : ''}
-      </div>
-    </div>
-  </div>
-
-  <div class="info-section">
-    <div class="info-box">
-      <h4>${entidadLabel}</h4>
-      <p><strong>${entidadNombre || '—'}</strong></p>
-      <p>RFC: ${entidadRfc || '—'}</p>
-      <p>${entidadDireccion || ''}</p>
-    </div>
-    <div class="info-box">
-      <h4>Datos del Documento</h4>
-      <p>Serie: ${transaccion?.serie || '—'}</p>
-      <p>Método de Pago: ${transaccion?.metodo_pago || '—'}</p>
-      <p>Almacén: ${transaccion?.almacen_nombre || '—'}</p>
-      ${transaccion?.fecha_vencimiento ? `<p>Vencimiento: ${new Date(transaccion.fecha_vencimiento).toLocaleDateString('es-MX')}</p>` : ''}
-    </div>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th style="width:40px;text-align:center;">#</th>
-        <th>Artículo</th>
-        <th style="width:80px;">SKU</th>
-        <th style="width:60px;text-align:center;">Cant.</th>
-        <th style="width:100px;text-align:right;">Precio</th>
-        <th style="width:100px;text-align:right;">Subtotal</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${detalleRows || '<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin artículos</td></tr>'}
-    </tbody>
-  </table>
-
-  <table class="totales">
-    <tr><td style="text-align:right;font-weight:bold;">Subtotal:</td><td style="text-align:right;">$${total.toLocaleString('es-MX', {minimumFractionDigits:2})}</td></tr>
-    <tr><td style="text-align:right;font-weight:bold;">IVA (16%):</td><td style="text-align:right;">$${(total * 0.16).toLocaleString('es-MX', {minimumFractionDigits:2})}</td></tr>
-    <tr><td style="text-align:right;font-weight:bold;" class="total-final">Total:</td><td style="text-align:right;" class="total-final">$${(total * 1.16).toLocaleString('es-MX', {minimumFractionDigits:2})}</td></tr>
-  </table>
-
-  <div class="firmas">
-    <div class="firma">
-      <div class="firma-linea">Recibió</div>
-    </div>
-    <div class="firma">
-      <div class="firma-linea">Autorizó</div>
-    </div>
-  </div>
-
-  <div class="footer">
-    <p>${empresa.pie_pagina || empresa.razon_social || 'Gracias por su preferencia'}</p>
-    <p>${empresa.terminos_legales || ''}</p>
-  </div>
-</body>
-</html>`;
-}
+});
 
 module.exports = router;

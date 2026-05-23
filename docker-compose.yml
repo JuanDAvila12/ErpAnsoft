@@ -27,6 +27,8 @@ services:
       - ./db/migration_v11_cleanup.sql:/docker-entrypoint-initdb.d/09_migration_v11_cleanup.sql
       - ./db/migration_v11_fix_tree.sql:/docker-entrypoint-initdb.d/10_migration_v11_fix_tree.sql
       - ./db/migration_v12_fix_views.sql:/docker-entrypoint-initdb.d/11_migration_v12_fix_views.sql
+      - ./db/migration_v14_cxc_cxp_redesign.sql:/docker-entrypoint-initdb.d/12_migration_v14_cxc_cxp_redesign.sql
+      - ./db/migration_v16_contabilidad_granular.sql:/docker-entrypoint-initdb.d/13_migration_v16_contabilidad_granular.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U spi_user -d spi_erp"]
       interval: 10s

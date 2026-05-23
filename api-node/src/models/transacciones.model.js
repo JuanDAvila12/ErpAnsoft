@@ -31,6 +31,7 @@ const TransaccionesModel = {
     salida_inventario:  'SAL',
     pago:               'PAG',
     cobro:              'COB',
+    asiento_manual:     'CONT',
   },
 
   /** Mapeo de tipo de transacción → tipo de serie de documento */
@@ -127,7 +128,7 @@ const TransaccionesModel = {
   // ================================================================
 
   /**
-   * Crea una transacción unificada (venta, compra, cotización, orden, inventario, pago/cobro).
+   * Crea una transacción unificada (venta, compra, cotización, orden, inventario, pago/cobro, asiento_manual).
    *
    * @param {string} tipo - Tipo de transacción
    * @param {Object} datos - Datos de la transacción
@@ -150,6 +151,7 @@ const TransaccionesModel = {
       comentario,
       moneda_id,
       articulos = [],
+      tipo_concepto = 'estandar',
     } = datos;
 
     const client = await pool.connect();
@@ -158,10 +160,9 @@ const TransaccionesModel = {
       await setAuditContext(client, req?.usuario?.id, req?.ip, `Creación de ${tipo}`);
 
       // ============================================
-      // VALIDACIONES
+      // VALIDACIONES GENERALES
       // ============================================
 
-      // Validar cliente si el tipo lo requiere
       if (tipo.includes('venta') || tipo === 'cotizacion') {
         if (!entidad_cliente_id) {
           throw new Error('entidad_cliente_id es requerido para transacciones de venta');
@@ -172,7 +173,6 @@ const TransaccionesModel = {
         }
       }
 
-      // Validar proveedor si el tipo lo requiere
       if (tipo.includes('compra')) {
         if (!entidad_proveedor_id) {
           throw new Error('entidad_proveedor_id es requerido para transacciones de compra');
@@ -183,7 +183,6 @@ const TransaccionesModel = {
         }
       }
 
-      // Validar vendedor opcional
       if (entidad_vendedor_id) {
         const vendedor = await this._validarEntidadConRol(entidad_vendedor_id, 'vendedor');
         if (!vendedor) {
@@ -192,9 +191,82 @@ const TransaccionesModel = {
       }
 
       // ============================================
+      // COBRO: validar factura_id
+      // ============================================
+      if (tipo === 'cobro') {
+        if (!datos.factura_id) {
+          throw new Error('factura_id es requerido para registrar un cobro');
+        }
+        if (!datos.monto_abono || parseFloat(datos.monto_abono) <= 0) {
+          throw new Error('monto_abono debe ser mayor a 0 para registrar un cobro');
+        }
+        // Validar que la factura exista y tenga saldo pendiente
+        const facResult = await client.query(
+          "SELECT id, total, saldo_restante, estado_saldo FROM transacciones WHERE id = $1 AND tipo = 'venta' AND estado_saldo IN ('pendiente', 'parcial')",
+          [datos.factura_id]
+        );
+        if (facResult.rows.length === 0) {
+          throw new Error(`Factura ID ${datos.factura_id} no encontrada o ya liquidada`);
+        }
+        const factura = facResult.rows[0];
+        const montoAbono = parseFloat(datos.monto_abono);
+        if (montoAbono > parseFloat(factura.saldo_restante)) {
+          throw new Error(`El monto del cobro (${montoAbono}) excede el saldo restante (${factura.saldo_restante})`);
+        }
+      }
+
+      // ============================================
+      // PAGO: validar factura_id (compra a proveedor)
+      // ============================================
+      if (tipo === 'pago') {
+        if (!datos.factura_id) {
+          throw new Error('factura_id es requerido para registrar un pago');
+        }
+        if (!datos.monto_abono || parseFloat(datos.monto_abono) <= 0) {
+          throw new Error('monto_abono debe ser mayor a 0 para registrar un pago');
+        }
+        const facResult = await client.query(
+          "SELECT id, total, saldo_restante, estado_saldo FROM transacciones WHERE id = $1 AND tipo = 'compra' AND estado_saldo IN ('pendiente', 'parcial')",
+          [datos.factura_id]
+        );
+        if (facResult.rows.length === 0) {
+          throw new Error(`Factura de compra ID ${datos.factura_id} no encontrada o ya liquidada`);
+        }
+        const factura = facResult.rows[0];
+        const montoAbono = parseFloat(datos.monto_abono);
+        if (montoAbono > parseFloat(factura.saldo_restante)) {
+          throw new Error(`El monto del pago (${montoAbono}) excede el saldo restante (${factura.saldo_restante})`);
+        }
+      }
+
+      // ============================================
+      // ASIENTO MANUAL: validar líneas contables
+      // ============================================
+      if (tipo === 'asiento_manual') {
+        const lineas = datos.lineas_contables || [];
+        if (lineas.length === 0) {
+          throw new Error('Debe incluir al menos una línea contable para un asiento manual');
+        }
+        let totalDebe = 0;
+        let totalHaber = 0;
+        for (const linea of lineas) {
+          if (!linea.cuenta_contable_id) {
+            throw new Error('Cada línea contable debe tener una cuenta_contable_id');
+          }
+          totalDebe += parseFloat(linea.debe || 0);
+          totalHaber += parseFloat(linea.haber || 0);
+        }
+        if (Math.abs(totalDebe - totalHaber) > 0.01) {
+          throw new Error(
+            `El asiento no cuadra: Débitos (${totalDebe.toFixed(2)}) ≠ Créditos (${totalHaber.toFixed(2)})`
+          );
+        }
+      }
+
+      // ============================================
       // VALIDACIÓN DE STOCK (para venta y salida_inventario)
       // ============================================
-      if (tipo === 'venta' || tipo === 'salida_inventario') {
+      if ((tipo === 'venta' || tipo === 'salida_inventario') && articulos.length > 0) {
         const almacenId = almacen_id || 1;
         for (const art of articulos) {
           const stockResult = await client.query(
@@ -210,7 +282,6 @@ const TransaccionesModel = {
           const cantidadSolicitada = parseFloat(art.cantidad) || 0;
 
           if (cantidadSolicitada > stockActual) {
-            // Obtener nombre del artículo para mensaje descriptivo
             const artNombre = await client.query(
               'SELECT nombre FROM articulos WHERE id = $1', [art.articulo_id]
             );
@@ -227,7 +298,7 @@ const TransaccionesModel = {
       // SERIE
       // ============================================
       let serie = serie_id;
-      if (!serie) {
+      if (!serie && tipo !== 'asiento_manual') {
         const serieDefault = await this._getSeriePorDefecto(client, tipo);
         serie = serieDefault?.id || null;
       }
@@ -235,11 +306,12 @@ const TransaccionesModel = {
       // ============================================
       // FOLIO ATÓMICO
       // ============================================
+      let folio = null;
       const tipoFolio = this._tipoFolioMap[tipo] || 'FAC';
       const folioResult = await client.query(
         'SELECT obtener_folio($1) AS folio', [tipoFolio]
       );
-      const folio = folioResult.rows[0].folio;
+      folio = folioResult.rows[0].folio;
 
       // ============================================
       // CALCULAR TOTAL
@@ -247,172 +319,267 @@ const TransaccionesModel = {
       let total = 0;
       const detallesArticulos = [];
 
-      for (const art of articulos) {
-        // Traer datos del artículo
-        const artResult = await client.query(
-          'SELECT precio_venta, costo_promedio, usa_serie FROM articulos WHERE id = $1',
-          [art.articulo_id]
+      if (tipo === 'cobro' || tipo === 'pago') {
+        // El total del cobro/pago es el monto del abono
+        total = parseFloat(datos.monto_abono) || 0;
+      } else if (tipo === 'asiento_manual') {
+        // El total del asiento manual es la suma de débitos
+        total = datos.lineas_contables.reduce((s, l) => s + parseFloat(l.debe || 0), 0);
+      } else {
+        for (const art of articulos) {
+          const artResult = await client.query(
+            'SELECT precio_venta, costo_promedio, usa_serie FROM articulos WHERE id = $1',
+            [art.articulo_id]
+          );
+          if (artResult.rows.length === 0) {
+            throw new Error(`Artículo con ID ${art.articulo_id} no encontrado`);
+          }
+          const artData = artResult.rows[0];
+
+          let precio;
+          if (tipo === 'venta') {
+            precio = parseFloat(artData.precio_venta);
+          } else if (tipo === 'compra') {
+            precio = art.precio_unitario != null
+              ? parseFloat(art.precio_unitario)
+              : parseFloat(artData.costo_promedio);
+          } else {
+            precio = art.precio_unitario != null
+              ? parseFloat(art.precio_unitario)
+              : parseFloat(artData.precio_venta);
+          }
+
+          const cantidad = parseFloat(art.cantidad) || 0;
+          const subtotal = precio * cantidad;
+          total += subtotal;
+
+          detallesArticulos.push({
+            ...art,
+            precio_unitario: precio,
+            subtotal,
+            usa_serie: artData.usa_serie,
+            tipo_movimiento: this._getTipoMovimiento(tipo, cantidad),
+            impuesto_id: art.impuesto_id || null,
+            cuenta_contable_id: art.cuenta_contable_id || null,
+            numero_serie: art.numero_serie || null,
+          });
+        }
+      }
+
+      // ============================================
+      // DETERMINAR ESTADO_SALDO Y SALDO_RESTANTE
+      // ============================================
+      let saldoRestante = 0;
+      let estadoSaldo = 'liquidado';
+
+      if ((tipo === 'venta' || tipo === 'compra') && terminos_pago_id) {
+        const tpResult = await client.query(
+          'SELECT dias_credito FROM terminos_pago WHERE id = $1',
+          [terminos_pago_id]
         );
-        if (artResult.rows.length === 0) {
-          throw new Error(`Artículo con ID ${art.articulo_id} no encontrado`);
+        const diasCredito = tpResult.rows[0]?.dias_credito || 0;
+        if (parseInt(diasCredito) > 0) {
+          saldoRestante = total;
+          estadoSaldo = 'pendiente';
         }
-        const artData = artResult.rows[0];
-
-        // Determinar precio:
-        // - Para ventas confirmadas: usar precio_venta del artículo
-        // - Para compras: usar el precio_unitario enviado (costo_promedio sugerido)
-        // - Para cotizaciones/órdenes: usar precio_unitario enviado
-        let precio;
-        if (tipo === 'venta') {
-          precio = parseFloat(artData.precio_venta);
-        } else if (tipo === 'compra') {
-          precio = art.precio_unitario != null
-            ? parseFloat(art.precio_unitario)
-            : parseFloat(artData.costo_promedio);
-        } else {
-          precio = art.precio_unitario != null
-            ? parseFloat(art.precio_unitario)
-            : parseFloat(artData.precio_venta);
-        }
-
-        const cantidad = parseFloat(art.cantidad) || 0;
-        const subtotal = precio * cantidad;
-        total += subtotal;
-
-        detallesArticulos.push({
-          ...art,
-          precio_unitario: precio,
-          subtotal,
-          usa_serie: artData.usa_serie,
-          tipo_movimiento: this._getTipoMovimiento(tipo, cantidad),
-          impuesto_id: art.impuesto_id || null,
-          cuenta_contable_id: art.cuenta_contable_id || null,
-          numero_serie: art.numero_serie || null,
-        });
       }
 
       // ============================================
       // INSERTAR TRANSACCIÓN
       // ============================================
-      const insertResult = await client.query(
-        `INSERT INTO transacciones
-         (tipo, estado, folio, total, moneda_id,
-          entidad_cliente_id, entidad_proveedor_id, entidad_vendedor_id,
-          almacen_id, almacen_destino_id, metodo_pago, forma_pago_id, terminos_pago_id,
-          serie_id, fecha_vencimiento, comentario, documento_origen_id)
-         VALUES ($1, 'confirmado', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-         RETURNING *`,
-        [tipo, folio, total, moneda_id || 1,
-         entidad_cliente_id || null, entidad_proveedor_id || null, entidad_vendedor_id || null,
-         almacen_id || null, almacen_destino_id || null, metodo_pago || 'efectivo', forma_pago_id || null,
-         terminos_pago_id || null, serie, fecha_vencimiento || null, comentario || null,
-         documento_origen_id || null]
-      );
-      const transaccion = insertResult.rows[0];
+      let transaccion;
+      if (tipo === 'asiento_manual') {
+        // Para asiento manual: incluir fecha si se proporcionó
+        const tieneFecha = datos.fecha && datos.fecha !== '';
+        const insertResult = await client.query(
+          `INSERT INTO transacciones
+           (tipo, estado, folio, total, moneda_id,
+            comentario, fecha, saldo_restante, estado_saldo, tipo_concepto)
+           VALUES ($1, 'confirmado', $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING *`,
+          [tipo, folio, total, moneda_id || 1,
+           comentario || null,
+           tieneFecha ? datos.fecha : new Date(),
+           saldoRestante, estadoSaldo, tipo_concepto]
+        );
+        transaccion = insertResult.rows[0];
+      } else if (tipo === 'cobro' || tipo === 'pago') {
+        // Para cobro/pago: registrar el abono en transacciones_cuentas
+        const insertResult = await client.query(
+          `INSERT INTO transacciones
+           (tipo, estado, folio, total, moneda_id,
+            entidad_cliente_id, entidad_proveedor_id, almacen_id,
+            metodo_pago, forma_pago_id, terminos_pago_id,
+            serie_id, comentario, saldo_restante, estado_saldo, documento_origen_id,
+            tipo_concepto)
+           VALUES ($1, 'confirmado', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+           RETURNING *`,
+          [tipo, folio, total, moneda_id || 1,
+           entidad_cliente_id || null, entidad_proveedor_id || null, almacen_id || null,
+           metodo_pago || 'efectivo', forma_pago_id || null, terminos_pago_id || null,
+           serie, comentario || null, 0, 'liquidado',
+           datos.factura_id || null, tipo_concepto]
+        );
+        transaccion = insertResult.rows[0];
+
+        // Insertar abono en transacciones_cuentas
+        const montoAbono = parseFloat(datos.monto_abono) || 0;
+        await client.query(
+          `INSERT INTO transacciones_cuentas (transaccion_id, transaccion_factura_id, monto)
+           VALUES ($1, $2, $3)`,
+          [transaccion.id, datos.factura_id, montoAbono]
+        );
+
+        // Actualizar saldo_restante y estado_saldo de la factura
+        const facturaResult = await client.query(
+          "SELECT saldo_restante, total FROM transacciones WHERE id = $1 FOR UPDATE",
+          [datos.factura_id]
+        );
+        const factura = facturaResult.rows[0];
+        const nuevoSaldo = parseFloat(factura.saldo_restante) - montoAbono;
+        let nuevoEstado;
+        if (nuevoSaldo <= 0.01) {
+          nuevoEstado = 'liquidado';
+        } else if (nuevoSaldo < parseFloat(factura.total)) {
+          nuevoEstado = 'parcial';
+        } else {
+          nuevoEstado = 'pendiente';
+        }
+
+        await client.query(
+          `UPDATE transacciones SET saldo_restante = $1, estado_saldo = $2 WHERE id = $3`,
+          [Math.max(0, nuevoSaldo), nuevoEstado, datos.factura_id]
+        );
+      } else {
+        const insertResult = await client.query(
+          `INSERT INTO transacciones
+           (tipo, estado, folio, total, moneda_id,
+            entidad_cliente_id, entidad_proveedor_id, entidad_vendedor_id,
+            almacen_id, almacen_destino_id, metodo_pago, forma_pago_id, terminos_pago_id,
+            serie_id, fecha_vencimiento, comentario, documento_origen_id,
+            saldo_restante, estado_saldo, tipo_concepto)
+           VALUES ($1, 'confirmado', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+           RETURNING *`,
+          [tipo, folio, total, moneda_id || 1,
+           entidad_cliente_id || null, entidad_proveedor_id || null, entidad_vendedor_id || null,
+           almacen_id || null, almacen_destino_id || null, metodo_pago || 'efectivo', forma_pago_id || null,
+           terminos_pago_id || null, serie, fecha_vencimiento || null, comentario || null,
+           documento_origen_id || null, saldoRestante, estadoSaldo, tipo_concepto]
+        );
+        transaccion = insertResult.rows[0];
+      }
 
       // ============================================
       // INSERTAR DETALLES + INVENTARIO + SERIES
       // ============================================
-      const almacenId = almacen_id || 1;
+      if (tipo !== 'cobro' && tipo !== 'pago' && tipo !== 'asiento_manual') {
+        const almacenId = almacen_id || 1;
 
-      for (const det of detallesArticulos) {
-        // INSERT en transacciones_detalle
-        const detResult = await client.query(
-          `INSERT INTO transacciones_detalle
-           (transaccion_id, articulo_id, cantidad, precio_unitario, subtotal,
-            impuesto_id, cuenta_contable_id, almacen_id, tipo_movimiento)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           RETURNING *`,
-          [transaccion.id, det.articulo_id, det.cantidad, det.precio_unitario, det.subtotal,
-           det.impuesto_id, det.cuenta_contable_id, almacenId, det.tipo_movimiento]
-        );
-        const detalle = detResult.rows[0];
-
-        // Registrar movimiento en inventario_movimientos
-        if (this._afectaInventario(tipo) && det.tipo_movimiento !== 'ninguno') {
-          const cantidadMov = (det.tipo_movimiento === 'salida') ? -det.cantidad : det.cantidad;
-
-          // Movimiento principal (salida desde almacén origen)
-          await client.query(
-            `INSERT INTO inventario_movimientos
-             (articulo_id, cantidad, tipo_movimiento, almacen_id,
-              referencia_tipo, referencia_id, documento_detalle_tipo, documento_detalle_id)
-             VALUES ($1, $2, $3, $4, 'transaccion', $5, 'transacciones_detalle', $6)`,
-            [det.articulo_id, Math.abs(cantidadMov), det.tipo_movimiento, almacenId,
-             transaccion.id, detalle.id]
+        for (const det of detallesArticulos) {
+          const detResult = await client.query(
+            `INSERT INTO transacciones_detalle
+             (transaccion_id, articulo_id, cantidad, precio_unitario, subtotal,
+              impuesto_id, cuenta_contable_id, almacen_id, tipo_movimiento)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             RETURNING *`,
+            [transaccion.id, det.articulo_id, det.cantidad, det.precio_unitario, det.subtotal,
+             det.impuesto_id, det.cuenta_contable_id, almacenId, det.tipo_movimiento]
           );
+          const detalle = detResult.rows[0];
 
-          // Para traspasos: insertar movimiento de ENTRADA en el almacén destino
-          if (tipo === 'traspaso' && almacen_destino_id) {
+          if (this._afectaInventario(tipo) && det.tipo_movimiento !== 'ninguno') {
+            const cantidadMov = (det.tipo_movimiento === 'salida') ? -det.cantidad : det.cantidad;
+
             await client.query(
               `INSERT INTO inventario_movimientos
                (articulo_id, cantidad, tipo_movimiento, almacen_id,
                 referencia_tipo, referencia_id, documento_detalle_tipo, documento_detalle_id)
-               VALUES ($1, $2, 'entrada', $3, 'transaccion', $4, 'transacciones_detalle', $5)`,
-              [det.articulo_id, Math.abs(cantidadMov), almacen_destino_id,
+               VALUES ($1, $2, $3, $4, 'transaccion', $5, 'transacciones_detalle', $6)`,
+              [det.articulo_id, Math.abs(cantidadMov), det.tipo_movimiento, almacenId,
                transaccion.id, detalle.id]
             );
-          }
 
-          // Actualizar costo_promedio en compras (promedio ponderado)
-          if (tipo === 'compra') {
-            const stockResult = await client.query(
-              `SELECT COALESCE(
-                 SUM(cantidad) FILTER (WHERE tipo_movimiento = 'entrada'), 0
-               ) - COALESCE(
-                 SUM(cantidad) FILTER (WHERE tipo_movimiento = 'salida'), 0
-               ) AS stock_actual
-               FROM inventario_movimientos WHERE articulo_id = $1`,
-              [det.articulo_id]
-            );
-            const stockActual = parseFloat(stockResult.rows[0].stock_actual) || det.cantidad;
-            const artRow = await client.query(
-              'SELECT costo_promedio FROM articulos WHERE id = $1',
-              [det.articulo_id]
-            );
-            const costoAnterior = parseFloat(artRow.rows[0].costo_promedio);
-            const stockAnterior = stockActual - det.cantidad;
-
-            let nuevoCosto;
-            if (stockAnterior <= 0) {
-              nuevoCosto = det.precio_unitario;
-            } else {
-              nuevoCosto = ((costoAnterior * stockAnterior) + (det.precio_unitario * det.cantidad)) / stockActual;
+            if (tipo === 'traspaso' && almacen_destino_id) {
+              await client.query(
+                `INSERT INTO inventario_movimientos
+                 (articulo_id, cantidad, tipo_movimiento, almacen_id,
+                  referencia_tipo, referencia_id, documento_detalle_tipo, documento_detalle_id)
+                 VALUES ($1, $2, 'entrada', $3, 'transaccion', $4, 'transacciones_detalle', $5)`,
+                [det.articulo_id, Math.abs(cantidadMov), almacen_destino_id,
+                 transaccion.id, detalle.id]
+              );
             }
 
+            if (tipo === 'compra') {
+              const stockResult = await client.query(
+                `SELECT COALESCE(
+                   SUM(cantidad) FILTER (WHERE tipo_movimiento = 'entrada'), 0
+                 ) - COALESCE(
+                   SUM(cantidad) FILTER (WHERE tipo_movimiento = 'salida'), 0
+                 ) AS stock_actual
+                 FROM inventario_movimientos WHERE articulo_id = $1`,
+                [det.articulo_id]
+              );
+              const stockActual = parseFloat(stockResult.rows[0].stock_actual) || det.cantidad;
+              const artRow = await client.query(
+                'SELECT costo_promedio FROM articulos WHERE id = $1',
+                [det.articulo_id]
+              );
+              const costoAnterior = parseFloat(artRow.rows[0].costo_promedio);
+              const stockAnterior = stockActual - det.cantidad;
+
+              let nuevoCosto;
+              if (stockAnterior <= 0) {
+                nuevoCosto = det.precio_unitario;
+              } else {
+                nuevoCosto = ((costoAnterior * stockAnterior) + (det.precio_unitario * det.cantidad)) / stockActual;
+              }
+
+              await client.query(
+                'UPDATE articulos SET costo_promedio = $1 WHERE id = $2',
+                [nuevoCosto, det.articulo_id]
+              );
+            }
+          }
+
+          if (det.usa_serie && det.numero_serie) {
+            if (det.tipo_movimiento === 'salida') {
+              const serieCheck = await client.query(
+                "SELECT id FROM articulos_series WHERE articulo_id = $1 AND numero_serie = $2 AND estado = 'disponible'",
+                [det.articulo_id, det.numero_serie]
+              );
+              if (serieCheck.rows.length === 0) {
+                throw new Error(
+                  `Serie ${det.numero_serie} no disponible para artículo ${det.articulo_id}`
+                );
+              }
+              await client.query(
+                "UPDATE articulos_series SET estado = 'vendido' WHERE id = $1",
+                [serieCheck.rows[0].id]
+              );
+            }
+
+            const estadoSerie = det.tipo_movimiento === 'salida' ? 'vendido' : 'disponible';
             await client.query(
-              'UPDATE articulos SET costo_promedio = $1 WHERE id = $2',
-              [nuevoCosto, det.articulo_id]
+              `INSERT INTO transacciones_series (transaccion_detalle_id, numero_serie, estado)
+               VALUES ($1, $2, $3)`,
+              [detalle.id, det.numero_serie, estadoSerie]
             );
           }
         }
+      }
 
-        // Manejo de series
-        if (det.usa_serie && det.numero_serie) {
-          if (det.tipo_movimiento === 'salida') {
-            // Validar que la serie exista y esté disponible
-            const serieCheck = await client.query(
-              "SELECT id FROM articulos_series WHERE articulo_id = $1 AND numero_serie = $2 AND estado = 'disponible'",
-              [det.articulo_id, det.numero_serie]
-            );
-            if (serieCheck.rows.length === 0) {
-              throw new Error(
-                `Serie ${det.numero_serie} no disponible para artículo ${det.articulo_id}`
-              );
-            }
-            // Marcar como vendida en articulos_series
-            await client.query(
-              "UPDATE articulos_series SET estado = 'vendido' WHERE id = $1",
-              [serieCheck.rows[0].id]
-            );
-          }
-
-          // Insertar en transacciones_series
-          const estadoSerie = det.tipo_movimiento === 'salida' ? 'vendido' : 'disponible';
+      // ============================================
+      // ASIENTO MANUAL: insertar líneas contables
+      // ============================================
+      if (tipo === 'asiento_manual') {
+        const lineas = datos.lineas_contables || [];
+        for (const linea of lineas) {
           await client.query(
-            `INSERT INTO transacciones_series (transaccion_detalle_id, numero_serie, estado)
-             VALUES ($1, $2, $3)`,
-            [detalle.id, det.numero_serie, estadoSerie]
+            `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
+             VALUES ($1, $2, $3, $4)`,
+            [transaccion.id, linea.cuenta_contable_id,
+             parseFloat(linea.debe || 0), parseFloat(linea.haber || 0)]
           );
         }
       }
@@ -426,7 +593,6 @@ const TransaccionesModel = {
 
       await client.query('COMMIT');
 
-      // Retornar la transacción completa
       return await this.findById(transaccion.id);
     } catch (err) {
       await client.query('ROLLBACK');
@@ -458,64 +624,147 @@ const TransaccionesModel = {
         ivaTasa = parseFloat(cfgResult.rows[0].valor) || 0.16;
       }
     } catch {
-      // Si no existe la config, usar valor por defecto
       ivaTasa = 0.16;
     }
 
-    // Buscar IDs de cuentas contables por código
-    const cuentasResult = await client.query(
-      `SELECT codigo, id FROM cuentas_contables WHERE codigo IN ('1101','1102','1200','1300','2100','2200','4100','5100')`
+    // Obtener códigos de cuenta desde configuracion_sistema (con defaults)
+    const configClaves = [
+      'cuenta_cxc_default', 'cuenta_cxp_default', 'cuenta_caja_default',
+      'cuenta_ventas_default', 'cuenta_compras_default',
+      'cuenta_iva_trasladado', 'cuenta_iva_acreditable',
+    ];
+    const cfgResult = await client.query(
+      `SELECT clave, valor FROM configuracion_sistema WHERE clave = ANY($1)`,
+      [configClaves]
     );
-    const cuentas = {};
-    for (const row of cuentasResult.rows) {
-      cuentas[row.codigo] = row.id;
+    const config = { cuenta_cxc_default: '1200', cuenta_cxp_default: '2100',
+      cuenta_caja_default: '1101', cuenta_ventas_default: '4100',
+      cuenta_compras_default: '5300', cuenta_iva_trasladado: '2200',
+      cuenta_iva_acreditable: '1108' };
+    for (const row of cfgResult.rows) {
+      config[row.clave] = row.valor;
     }
 
-    // IDs por defecto (fallback)
-    const defaultCxcId = cuentas['1200'] || null;
-    const defaultCajaId = cuentas['1101'] || null;
-    const defaultBancosId = cuentas['1102'] || null;
-    const defaultProveedoresId = cuentas['2100'] || null;
-    const defaultIvaPagarId = cuentas['2200'] || null;
-    const defaultVentasId = cuentas['4100'] || null;
-    const defaultInventarioId = cuentas['1300'] || null;
-    const defaultCostoVentasId = cuentas['5100'] || null;
+    // Buscar IDs de cuentas contables por código
+    const codigosBuscados = Object.values(config);
+    const cuentasResult = await client.query(
+      `SELECT codigo, id FROM cuentas_contables WHERE codigo = ANY($1)`,
+      [codigosBuscados]
+    );
+    const cuentasMap = {};
+    for (const row of cuentasResult.rows) {
+      cuentasMap[row.codigo] = row.id;
+    }
+
+    // Resolver IDs de cuentas
+    const resolveId = (codigo) => cuentasMap[codigo] || null;
+    const cuentaCxc = resolveId(config.cuenta_cxc_default);
+    const cuentaCxp = resolveId(config.cuenta_cxp_default);
+    const cuentaCaja = resolveId(config.cuenta_caja_default);
+    const cuentaVentas = resolveId(config.cuenta_ventas_default);
+    const cuentaCompras = resolveId(config.cuenta_compras_default);
+    const cuentaIvaTrasladado = resolveId(config.cuenta_iva_trasladado);
+    const cuentaIvaAcreditable = resolveId(config.cuenta_iva_acreditable);
+
+    // Cuentas hardcodeadas como fallback (códigos originales)
+    const cuentasHardResult = await client.query(
+      `SELECT codigo, id FROM cuentas_contables WHERE codigo IN ('1101','1200','1300','2100','2200','4100','5100','5300')`
+    );
+    const hardCuentas = {};
+    for (const row of cuentasHardResult.rows) {
+      hardCuentas[row.codigo] = row.id;
+    }
+
+    const cuentaCostoVentas = hardCuentas['5100'] || null;
+    const cuentaInventario = hardCuentas['1300'] || null;
+
+    let cuentaBancos = hardCuentas['1102'] || cuentaCaja;
+    const cxcFallback = cuentaCxc || hardCuentas['1200'] || null;
+    const cxpFallback = cuentaCxp || hardCuentas['2100'] || null;
+    const cajaFallback = cuentaCaja || hardCuentas['1101'] || null;
 
     const totalSinIva = detalles.reduce((s, d) => s + d.subtotal, 0);
     const ivaMonto = totalSinIva * ivaTasa;
     const totalConIva = totalSinIva + ivaMonto;
 
+    // ============================================================
+    // CONSULTAR CONFIGURACIÓN CONTABLE DE LA ENTIDAD (V16)
+    // ============================================================
+    const tipoConcepto = transaccion.tipo_concepto || 'estandar';
+
+    /**
+     * Busca en entidad_cuentas_contables una cuenta configurada para la entidad y rol.
+     * @param {number} entidadId
+     * @param {string} rolContable
+     * @returns {number|null} cuenta_contable_id
+     */
+    const _getEntidadCuenta = async (entidadId, rolContable) => {
+      if (!entidadId || !rolContable) return null;
+      try {
+        const result = await client.query(
+          `SELECT cuenta_contable_id FROM entidad_cuentas_contables
+           WHERE entidad_id = $1 AND rol_contable = $2 AND activo = true
+           LIMIT 1`,
+          [entidadId, rolContable]
+        );
+        return result.rows[0]?.cuenta_contable_id || null;
+      } catch {
+        return null;
+      }
+    };
+
+    // Determinar si es a crédito según terminos_pago
+    let esCredito = false;
+    if (transaccion.terminos_pago_id) {
+      const tpResult = await client.query(
+        'SELECT dias_credito FROM terminos_pago WHERE id = $1',
+        [transaccion.terminos_pago_id]
+      );
+      if (tpResult.rows.length > 0 && parseInt(tpResult.rows[0].dias_credito) > 0) {
+        esCredito = true;
+      }
+    }
+
     if (tipo === 'venta') {
-      // Cargo a Clientes (o Caja según método de pago)
-      let cuentaCargo = defaultCxcId || defaultCajaId;
-      if (transaccion.metodo_pago === 'transferencia' || transaccion.metodo_pago === 'cheque') {
-        cuentaCargo = defaultBancosId || cuentaCargo;
+      // Determinar cuenta de cargo según tipo_concepto y configuración de la entidad
+      const entidadId = transaccion.entidad_cliente_id;
+      let cuentaCargo;
+
+      if (tipoConcepto === 'deudores') {
+        // Para deudores, intentar usar la cuenta configurada como 'deudor' o 'cliente'
+        cuentaCargo = await _getEntidadCuenta(entidadId, 'deudor')
+                 || await _getEntidadCuenta(entidadId, 'cliente');
       }
 
-      if (cuentaCargo && defaultVentasId) {
-        // Cargo: Clientes/Bancos/Caja
+      if (!cuentaCargo) {
+        if (esCredito) {
+          cuentaCargo = cxcFallback;
+        } else if (transaccion.metodo_pago === 'transferencia' || transaccion.metodo_pago === 'cheque') {
+          cuentaCargo = cuentaBancos || cajaFallback;
+        } else {
+          cuentaCargo = cajaFallback;
+        }
+      }
+
+      if (cuentaCargo && cuentaVentas) {
         await client.query(
           `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
            VALUES ($1, $2, $3, 0)`,
           [transaccion.id, cuentaCargo, totalConIva]
         );
-        // Abono: Ventas
         await client.query(
           `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
            VALUES ($1, $2, 0, $3)`,
-          [transaccion.id, defaultVentasId, totalSinIva]
+          [transaccion.id, cuentaVentas, totalSinIva]
         );
-        // Abono: IVA por pagar
-        if (defaultIvaPagarId && ivaMonto > 0) {
+        if (cuentaIvaTrasladado && ivaMonto > 0) {
           await client.query(
             `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
              VALUES ($1, $2, 0, $3)`,
-            [transaccion.id, defaultIvaPagarId, ivaMonto]
+            [transaccion.id, cuentaIvaTrasladado, ivaMonto]
           );
         }
-        // Cargo: Costo de Ventas / Abono: Inventario
-        if (defaultCostoVentasId && defaultInventarioId) {
-          // Tomar el costo total de los artículos vendidos
+        if (cuentaCostoVentas && cuentaInventario) {
           let costoTotal = 0;
           for (const det of detalles) {
             const costo = await client.query(
@@ -527,36 +776,47 @@ const TransaccionesModel = {
           await client.query(
             `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
              VALUES ($1, $2, $3, 0)`,
-            [transaccion.id, defaultCostoVentasId, costoTotal]
+            [transaccion.id, cuentaCostoVentas, costoTotal]
           );
           await client.query(
             `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
              VALUES ($1, $2, 0, $3)`,
-            [transaccion.id, defaultInventarioId, costoTotal]
+            [transaccion.id, cuentaInventario, costoTotal]
           );
         }
       }
     } else if (tipo === 'compra') {
-      // Cargo: Inventario
-      if (defaultInventarioId) {
+      let cuentaInventarioOCompras = cuentaCompras || cuentaInventario;
+      if (cuentaInventarioOCompras) {
         await client.query(
           `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
            VALUES ($1, $2, $3, 0)`,
-          [transaccion.id, defaultInventarioId, totalSinIva]
+          [transaccion.id, cuentaInventarioOCompras, totalSinIva]
         );
       }
-      // Cargo: IVA acreditable (como parte de 2200, usamos la misma cuenta pero sería mejor una cuenta de IVA acreditable)
-      if (defaultIvaPagarId && ivaMonto > 0) {
+      if (cuentaIvaAcreditable && ivaMonto > 0) {
         await client.query(
           `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
            VALUES ($1, $2, $3, 0)`,
-          [transaccion.id, defaultIvaPagarId, ivaMonto]
+          [transaccion.id, cuentaIvaAcreditable, ivaMonto]
         );
       }
-      // Abono: Proveedores (o Caja según método de pago)
-      let cuentaAbono = defaultProveedoresId || defaultCajaId;
-      if (transaccion.metodo_pago === 'transferencia' || transaccion.metodo_pago === 'cheque') {
-        cuentaAbono = defaultBancosId || cuentaAbono;
+      let cuentaAbono;
+      // Consultar configuración contable de la entidad para compras
+      const entidadProvId = transaccion.entidad_proveedor_id;
+      if (tipoConcepto === 'gasto') {
+        // Para gastos, usar cuenta de 'acreedor' o 'proveedor' configurada
+        cuentaAbono = await _getEntidadCuenta(entidadProvId, 'acreedor')
+                  || await _getEntidadCuenta(entidadProvId, 'proveedor');
+      }
+      if (!cuentaAbono) {
+        if (esCredito) {
+          cuentaAbono = cxpFallback;
+        } else if (transaccion.metodo_pago === 'transferencia' || transaccion.metodo_pago === 'cheque') {
+          cuentaAbono = cuentaBancos || cajaFallback;
+        } else {
+          cuentaAbono = cajaFallback;
+        }
       }
       if (cuentaAbono) {
         await client.query(
@@ -566,31 +826,38 @@ const TransaccionesModel = {
         );
       }
     } else if (tipo === 'cobro') {
-      // Simplificado: Cargo a Caja, Abono a Clientes
-      if (defaultCajaId && defaultCxcId) {
+      // ==========================================
+      // COBRO: Cargo a Caja/Bancos, Abono a Clientes (CxC)
+      // Usar el total (monto del cobro) en lugar de totalConIva
+      // ==========================================
+      const montoCobro = parseFloat(transaccion.total) || totalConIva;
+      if (cajaFallback && cxcFallback) {
         await client.query(
           `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
            VALUES ($1, $2, $3, 0)`,
-          [transaccion.id, defaultCajaId, totalConIva]
+          [transaccion.id, cajaFallback, montoCobro]
         );
         await client.query(
           `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
            VALUES ($1, $2, 0, $3)`,
-          [transaccion.id, defaultCxcId, totalConIva]
+          [transaccion.id, cxcFallback, montoCobro]
         );
       }
     } else if (tipo === 'pago') {
-      // Simplificado: Cargo a Proveedores, Abono a Caja
-      if (defaultProveedoresId && defaultCajaId) {
+      // ==========================================
+      // PAGO: Cargo a CxP (Proveedores), Abono a Caja/Bancos
+      // ==========================================
+      const montoPago = parseFloat(transaccion.total) || totalConIva;
+      if (cxpFallback && cajaFallback) {
         await client.query(
           `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
            VALUES ($1, $2, $3, 0)`,
-          [transaccion.id, defaultProveedoresId, totalConIva]
+          [transaccion.id, cxpFallback, montoPago]
         );
         await client.query(
           `INSERT INTO transacciones_contables (transaccion_id, cuenta_contable_id, debe, haber)
            VALUES ($1, $2, 0, $3)`,
-          [transaccion.id, defaultCajaId, totalConIva]
+          [transaccion.id, cajaFallback, montoPago]
         );
       }
     }
@@ -613,7 +880,6 @@ const TransaccionesModel = {
       await client.query('BEGIN');
       await setAuditContext(client, req?.usuario?.id, req?.ip, `Conversión a ${nuevoTipo}`);
 
-      // Obtener transacción origen
       const origen = await client.query(
         "SELECT * FROM transacciones WHERE id = $1 AND estado NOT IN ('cancelado')",
         [origenId]
@@ -623,7 +889,6 @@ const TransaccionesModel = {
       }
       const docOrigen = origen.rows[0];
 
-      // Validar conversión lógica
       const conversionesPermitidas = {
         cotizacion:        ['orden_venta', 'venta'],
         orden_venta:       ['venta'],
@@ -638,13 +903,11 @@ const TransaccionesModel = {
         );
       }
 
-      // Obtener detalles del origen
       const detalles = await client.query(
         'SELECT * FROM transacciones_detalle WHERE transaccion_id = $1',
         [origenId]
       );
 
-      // Armar datos para nueva transacción
       const articulos = detalles.rows.map(d => ({
         articulo_id: d.articulo_id,
         cantidad: d.cantidad,
@@ -653,17 +916,14 @@ const TransaccionesModel = {
         cuenta_contable_id: d.cuenta_contable_id,
       }));
 
-      // Generar folio
       const tipoFolio = this._tipoFolioMap[nuevoTipo] || 'FAC';
       const folioResult = await client.query(
         'SELECT obtener_folio($1) AS folio', [tipoFolio]
       );
       const folio = folioResult.rows[0].folio;
 
-      // Obtener serie
       const serieDefault = await this._getSeriePorDefecto(client, nuevoTipo);
 
-      // Calcular total
       let total = 0;
       for (const art of articulos) {
         const artResult = await client.query(
@@ -684,24 +944,38 @@ const TransaccionesModel = {
         total += precio * art.cantidad;
       }
 
-      // Insertar nueva transacción con documento_origen_id
+      // Determinar saldo_restante si es a crédito
+      let saldoRestante = 0;
+      let estadoSaldo = 'liquidado';
+      if ((nuevoTipo === 'venta' || nuevoTipo === 'compra') && docOrigen.terminos_pago_id) {
+        const tpResult = await client.query(
+          'SELECT dias_credito FROM terminos_pago WHERE id = $1',
+          [docOrigen.terminos_pago_id]
+        );
+        if (tpResult.rows.length > 0 && parseInt(tpResult.rows[0].dias_credito) > 0) {
+          saldoRestante = total;
+          estadoSaldo = 'pendiente';
+        }
+      }
+
       const insertResult = await client.query(
         `INSERT INTO transacciones
          (tipo, estado, folio, total, moneda_id,
           entidad_cliente_id, entidad_proveedor_id, entidad_vendedor_id,
           almacen_id, metodo_pago, forma_pago_id, terminos_pago_id,
-          serie_id, fecha_vencimiento, comentario, documento_origen_id)
-         VALUES ($1, 'confirmado', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          serie_id, fecha_vencimiento, comentario, documento_origen_id,
+          saldo_restante, estado_saldo)
+         VALUES ($1, 'confirmado', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          RETURNING *`,
         [nuevoTipo, folio, total, docOrigen.moneda_id || 1,
          docOrigen.entidad_cliente_id, docOrigen.entidad_proveedor_id, docOrigen.entidad_vendedor_id,
          docOrigen.almacen_id, docOrigen.metodo_pago || 'efectivo', docOrigen.forma_pago_id,
          docOrigen.terminos_pago_id, serieDefault?.id || null, docOrigen.fecha_vencimiento,
-         `Convertido desde ${docOrigen.tipo} ${docOrigen.folio}`, origenId]
+         `Convertido desde ${docOrigen.tipo} ${docOrigen.folio}`, origenId,
+         saldoRestante, estadoSaldo]
       );
       const nuevaTransaccion = insertResult.rows[0];
 
-      // Insertar detalles y movimientos de inventario
       const almacenId = docOrigen.almacen_id || 1;
 
       for (const det of detalles.rows) {
@@ -718,7 +992,6 @@ const TransaccionesModel = {
         );
         const detalleId = detResult.rows[0].id;
 
-        // Solo para tipos que afectan inventario (no órdenes/cotizaciones)
         if (this._afectaInventario(nuevoTipo) && tipoMov !== 'ninguno') {
           const cantidadMov = (tipoMov === 'salida') ? -det.cantidad : det.cantidad;
           await client.query(
@@ -732,7 +1005,6 @@ const TransaccionesModel = {
         }
       }
 
-      // Generar asientos contables si aplica
       const nuevosDetalles = detalles.rows.map(d => ({
         articulo_id: d.articulo_id,
         cantidad: d.cantidad,
@@ -745,7 +1017,6 @@ const TransaccionesModel = {
         await this._generarAsientosContables(client, nuevoTipo, nuevaTransaccion, nuevosDetalles);
       }
 
-      // Actualizar estado del documento origen a 'convertido'
       await client.query(
         "UPDATE transacciones SET estado = 'convertido', updated_at = NOW() WHERE id = $1",
         [origenId]
@@ -778,7 +1049,6 @@ const TransaccionesModel = {
       await client.query('BEGIN');
       await setAuditContext(client, req?.usuario?.id, req?.ip, `Cancelación de transacción ${id}`);
 
-      // Obtener transacción con lock
       const doc = await client.query(
         "SELECT * FROM transacciones WHERE id = $1 AND estado NOT IN ('cancelado') FOR UPDATE",
         [id]
@@ -788,13 +1058,48 @@ const TransaccionesModel = {
       }
       const transaccion = doc.rows[0];
 
-      // Obtener detalles con tipo_movimiento
+      // Si es cobro/pago, revertir el abono
+      if ((transaccion.tipo === 'cobro' || transaccion.tipo === 'pago') && transaccion.documento_origen_id) {
+        const abonos = await client.query(
+          "SELECT * FROM transacciones_cuentas WHERE transaccion_id = $1",
+          [id]
+        );
+        for (const abono of abonos.rows) {
+          const montoAbono = parseFloat(abono.monto);
+          const facturaResult = await client.query(
+            "SELECT saldo_restante, total FROM transacciones WHERE id = $1 FOR UPDATE",
+            [abono.transaccion_factura_id]
+          );
+          if (facturaResult.rows.length > 0) {
+            const factura = facturaResult.rows[0];
+            const nuevoSaldo = parseFloat(factura.saldo_restante) + montoAbono;
+            const totalFac = parseFloat(factura.total);
+            let nuevoEstado;
+            if (nuevoSaldo >= totalFac - 0.01) {
+              nuevoEstado = 'pendiente';
+            } else if (nuevoSaldo > 0) {
+              nuevoEstado = 'parcial';
+            } else {
+              nuevoEstado = 'liquidado';
+            }
+            await client.query(
+              `UPDATE transacciones SET saldo_restante = $1, estado_saldo = $2 WHERE id = $3`,
+              [nuevoSaldo, nuevoEstado, abono.transaccion_factura_id]
+            );
+          }
+        }
+        // Eliminar abonos
+        await client.query(
+          "DELETE FROM transacciones_cuentas WHERE transaccion_id = $1",
+          [id]
+        );
+      }
+
       const detalles = await client.query(
         "SELECT * FROM transacciones_detalle WHERE transaccion_id = $1 AND tipo_movimiento IN ('entrada','salida')",
         [id]
       );
 
-      // Revertir inventario: generar movimientos inversos
       for (const det of detalles.rows) {
         const tipoInverso = det.tipo_movimiento === 'entrada' ? 'salida' : 'entrada';
         await client.query(
@@ -806,7 +1111,6 @@ const TransaccionesModel = {
         );
       }
 
-      // Liberar series si las hay (cambiar estado a 'disponible')
       await client.query(
         `UPDATE transacciones_series ts
          SET estado = 'disponible'
@@ -817,7 +1121,6 @@ const TransaccionesModel = {
         [id]
       );
 
-      // También liberar en articulos_series si se marcaron como vendidos
       await client.query(
         `UPDATE articulos_series aser
          SET estado = 'disponible'
@@ -830,7 +1133,6 @@ const TransaccionesModel = {
         [id]
       );
 
-      // Cambiar estado de la transacción
       await client.query(
         "UPDATE transacciones SET estado = 'cancelado', updated_at = NOW() WHERE id = $1",
         [id]
@@ -1001,6 +1303,21 @@ const TransaccionesModel = {
                 WHERE tc.transaccion_id = t.id),
                 '[]'::json
               ) AS asientos_contables,
+              -- Abonos (cobros/pagos aplicados a esta transacción)
+              COALESCE(
+                (SELECT json_agg(json_build_object(
+                  'id', tc2.id,
+                  'transaccion_id', tc2.transaccion_id,
+                  'monto', tc2.monto,
+                  'created_at', tc2.created_at,
+                  'tipo', t_cobro.tipo,
+                  'folio', t_cobro.folio
+                ))
+                FROM transacciones_cuentas tc2
+                LEFT JOIN transacciones t_cobro ON t_cobro.id = tc2.transaccion_id
+                WHERE tc2.transaccion_factura_id = t.id),
+                '[]'::json
+              ) AS abonos,
               -- Documento origen
               (SELECT json_build_object(
                 'id', t_origen.id,
@@ -1008,7 +1325,7 @@ const TransaccionesModel = {
                 'folio', t_origen.folio,
                 'estado', t_origen.estado
               ) FROM transacciones t_origen WHERE t_origen.id = t.documento_origen_id) AS origen,
-              -- Documento destino (el que se creó a partir de éste)
+              -- Documento destino
               (SELECT json_build_object(
                 'id', t_destino.id,
                 'tipo', t_destino.tipo,

@@ -181,7 +181,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '@/plugins/axios'
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -219,10 +219,7 @@ const formData = ref({
 
 async function cargarCatalogos() {
   try {
-    const token = localStorage.getItem('token')
-    const res = await axios.get('/api/v1/catalogos/regimenes-fiscales', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    const res = await apiClient.get('/api/v1/catalogos/regimenes-fiscales')
     regimenesFiscales.value = res.data?.datos || res.data || []
   } catch (err) {
     console.error('Error al cargar catálogos:', err)
@@ -232,15 +229,12 @@ async function cargarCatalogos() {
 async function cargarDatos() {
   loading.value = true
   errorMsg.value = ''
+  proveedores.value = []
   try {
-    const token = localStorage.getItem('token')
     const params = { rol: 'proveedor' }
     if (filtros.value.search) params.search = filtros.value.search
 
-    const res = await axios.get('/api/v1/entidades', {
-      headers: { Authorization: `Bearer ${token}` },
-      params,
-    })
+    const res = await apiClient.get('/api/v1/entidades', { params })
     proveedores.value = res.data?.datos || res.data || []
     if (!Array.isArray(proveedores.value)) proveedores.value = []
   } catch (err) {
@@ -298,21 +292,16 @@ async function guardar() {
 
   guardando.value = true
   try {
-    const token = localStorage.getItem('token')
     const payload = {
       ...formData.value,
       roles: ['proveedor'],
     }
 
     if (editando.value && proveedorEditando.value) {
-      await axios.put(`/api/v1/entidades/${proveedorEditando.value.id}`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await apiClient.put(`/api/v1/entidades/${proveedorEditando.value.id}`, payload)
       snackbar.value = { show: true, text: 'Proveedor actualizado exitosamente', color: 'success' }
     } else {
-      await axios.post('/api/v1/entidades', payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await apiClient.post('/api/v1/entidades', payload)
       snackbar.value = { show: true, text: 'Proveedor creado exitosamente', color: 'success' }
     }
 

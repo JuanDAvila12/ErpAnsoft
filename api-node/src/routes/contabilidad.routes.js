@@ -47,10 +47,11 @@ router.get('/cuentas', authMiddleware, async (req, res) => {
  */
 router.get('/asientos', authMiddleware, async (req, res) => {
   try {
-    const { fecha_desde, fecha_hasta, cuenta_id, limite } = req.query;
+    const { fecha_desde, fecha_hasta, cuenta_contable_id, tipo, limite } = req.query;
     let query = `
       SELECT tc.*, cc.codigo AS cuenta_codigo, cc.nombre AS cuenta_nombre,
-             t.folio AS transaccion_folio, t.tipo AS transaccion_tipo
+             t.folio, t.tipo AS tipo_transaccion,
+             t.id AS transaccion_id
       FROM transacciones_contables tc
       LEFT JOIN cuentas_contables cc ON cc.id = tc.cuenta_contable_id
       LEFT JOIN transacciones t ON t.id = tc.transaccion_id
@@ -69,9 +70,14 @@ router.get('/asientos', authMiddleware, async (req, res) => {
       params.push(fecha_hasta);
       idx++;
     }
-    if (cuenta_id) {
+    if (cuenta_contable_id) {
       query += ` AND tc.cuenta_contable_id = $${idx}`;
-      params.push(cuenta_id);
+      params.push(cuenta_contable_id);
+      idx++;
+    }
+    if (tipo) {
+      query += ` AND t.tipo = $${idx}`;
+      params.push(tipo);
       idx++;
     }
 

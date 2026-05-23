@@ -118,6 +118,15 @@
       <v-card-actions class="pa-4 pt-0">
         <v-spacer />
         <v-btn
+          color="info"
+          variant="tonal"
+          prepend-icon="mdi-printer"
+          :loading="generandoPDF"
+          @click="imprimirPDF"
+        >
+          Imprimir PDF
+        </v-btn>
+        <v-btn
           v-if="documento.estado === 'confirmado' && documento.tipo === 'orden_compra'"
           color="primary"
           variant="tonal"
@@ -165,6 +174,62 @@
           ${{ Number(item.subtotal).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
         </template>
       </v-data-table>
+    </v-card>
+
+    <!-- Asientos Contables -->
+    <v-card variant="outlined" class="mb-4">
+      <v-card-title class="text-subtitle-1 font-weight-bold pa-4">
+        <v-icon class="mr-2">mdi-book-multiple</v-icon>
+        Asientos Contables
+        <v-chip v-if="documento?.asientos_contables?.length" size="small" variant="tonal" class="ml-2">
+          {{ documento.asientos_contables.length }} registro(s)
+        </v-chip>
+      </v-card-title>
+      <v-card-text class="pa-4">
+        <div v-if="!documento?.asientos_contables?.length" class="text-center pa-4 text-medium-emphasis">
+          <v-icon size="48" class="mb-2">mdi-book-multiple</v-icon>
+          <p>No hay asientos contables para esta transacción.</p>
+        </div>
+        <v-table v-else density="compact">
+          <thead>
+            <tr>
+              <th class="text-left">Cuenta</th>
+              <th class="text-left">Código</th>
+              <th class="text-right">Debe</th>
+              <th class="text-right">Haber</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(asiento, idx) in documento.asientos_contables" :key="idx">
+              <td>{{ asiento.cuenta_nombre || '—' }}</td>
+              <td><v-chip size="x-small" variant="tonal">{{ asiento.cuenta_codigo || '—' }}</v-chip></td>
+              <td class="text-right">
+                <span v-if="parseFloat(asiento.debe) > 0" class="text-success font-weight-medium">
+                  ${{ Number(asiento.debe).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
+                </span>
+                <span v-else class="text-medium-emphasis">—</span>
+              </td>
+              <td class="text-right">
+                <span v-if="parseFloat(asiento.haber) > 0" class="text-error font-weight-medium">
+                  ${{ Number(asiento.haber).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
+                </span>
+                <span v-else class="text-medium-emphasis">—</span>
+              </td>
+            </tr>
+          </tbody>
+          <tfoot v-if="documento.asientos_contables?.length > 0">
+            <tr class="font-weight-bold">
+              <td colspan="2">Totales</td>
+              <td class="text-right text-success">
+                ${{ Number(documento.asientos_contables.reduce((s, a) => s + parseFloat(a.debe || 0), 0)).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
+              </td>
+              <td class="text-right text-error">
+                ${{ Number(documento.asientos_contables.reduce((s, a) => s + parseFloat(a.haber || 0), 0)).toLocaleString('es-MX', { minimumFractionDigits: 2 }) }}
+              </td>
+            </tr>
+          </tfoot>
+        </v-table>
+      </v-card-text>
     </v-card>
 
     <!-- Panel de Historial (CHATTER) -->
@@ -308,6 +373,7 @@ const loadingDetalle = ref(false)
 const convirtiendo = ref(false)
 const cancelando = ref(false)
 const dialogoCancelar = ref(false)
+const generandoPDF = ref(false)
 
 const snackbar = ref({ show: false, text: '', color: 'success' })
 
@@ -442,6 +508,33 @@ async function ejecutarCancelacion() {
     snackbar.value = { show: true, text: err.response?.data?.error || 'Error al cancelar', color: 'error' }
   } finally {
     cancelando.value = false
+  }
+}
+
+async function imprimirPDF() {
+  if (!documento.value) return
+  generandoPDF.value = true
+  try {
+    const id = documento.value.id
+    const token = localStorage.getItem('token')
+    const baseURL = (import.meta.env.VITE_API_NODE_URL || 'http://localhost:3000').replace(/\/+$/, '')
+    const response = await fetch(`${baseURL}/api/v1/transacciones/${id}/pdf`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null)
+      throw new Error(errorData?.error || `Error HTTP ${response.status}`)
+    }
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    // Liberar URL después de un tiempo
+    setTimeout(() => window.URL.revokeObjectURL(url), 60000)
+  } catch (err) {
+    console.error('Error al generar PDF:', err)
+    snackbar.value = { show: true, text: 'Error al generar PDF: ' + err.message, color: 'error' }
+  } finally {
+    generandoPDF.value = false
   }
 }
 

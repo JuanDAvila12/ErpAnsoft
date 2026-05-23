@@ -44,7 +44,7 @@
     <!-- Empty state -->
     <v-card v-else-if="almacenes.length === 0" variant="outlined" class="text-center pa-8">
       <v-icon size="64" color="grey-lighten-1" class="mb-4">mdi-warehouse-outline</v-icon>
-      <h3 class="text-h6 text-medium-emphasis">No se encontraron almacenes</h3>
+      <h3 class="text-h6 text-medium-emphasis">No hay almacenes registrados</h3>
       <p class="text-body-2 text-medium-emphasis mt-1">No hay almacenes registrados en el sistema</p>
       <v-btn color="warning" variant="tonal" prepend-icon="mdi-plus" class="mt-2" @click="abrirDialogo(null)">
         Agregar primer almacén
@@ -138,7 +138,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import axios from 'axios'
+import apiClient from '@/plugins/axios'
 
 const loading = ref(false)
 const errorMsg = ref('')
@@ -167,15 +167,12 @@ async function cargarDatos() {
   loading.value = true
   errorMsg.value = ''
   try {
-    const token = localStorage.getItem('token')
-    const res = await axios.get('/api/v1/almacenes', {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    const res = await apiClient.get('/api/v1/almacenes')
     almacenes.value = res.data?.datos || res.data || []
     if (!Array.isArray(almacenes.value)) almacenes.value = []
   } catch (err) {
     console.error('Error al cargar almacenes:', err)
-    errorMsg.value = err.response?.data?.error || err.message || 'Error al cargar almacenes'
+    errorMsg.value = err.response?.data?.error || err.response?.data?.mensaje || err.message || 'Error al cargar almacenes'
     almacenes.value = []
   } finally {
     loading.value = false
@@ -198,25 +195,23 @@ function abrirDialogo(item) {
 }
 
 async function guardar() {
-  if (!formData.value.nombre) {
+  if (!formData.value.nombre || !formData.value.nombre.trim()) {
     snackbar.value = { show: true, text: 'El nombre es requerido', color: 'warning' }
     return
   }
 
   guardando.value = true
   try {
-    const token = localStorage.getItem('token')
-    const payload = { ...formData.value }
+    const payload = {
+      nombre: formData.value.nombre.trim(),
+      ubicacion: formData.value.ubicacion || null,
+    }
 
     if (editando.value && almacenEditando.value) {
-      await axios.put(`/api/v1/inventario/almacenes/${almacenEditando.value.id}`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await apiClient.put(`/api/v1/almacenes/${almacenEditando.value.id}`, payload)
       snackbar.value = { show: true, text: 'Almacén actualizado exitosamente', color: 'success' }
     } else {
-      await axios.post('/api/v1/inventario/almacenes', payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await apiClient.post('/api/v1/almacenes', payload)
       snackbar.value = { show: true, text: 'Almacén creado exitosamente', color: 'success' }
     }
 
@@ -224,7 +219,8 @@ async function guardar() {
     await cargarDatos()
   } catch (err) {
     console.error('Error al guardar:', err)
-    snackbar.value = { show: true, text: err.response?.data?.error || 'Error al guardar', color: 'error' }
+    const mensaje = err.response?.data?.mensaje || err.response?.data?.error || 'Error al guardar'
+    snackbar.value = { show: true, text: mensaje, color: 'error' }
   } finally {
     guardando.value = false
   }

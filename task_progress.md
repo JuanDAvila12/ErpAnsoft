@@ -1,12 +1,18 @@
-# Task Progress - Corrección de Módulos ERP
+# Task Progress - Configuración Contable Granular
 
-## Checklist
-- [ ] Explorar estructura del proyecto (backend y frontend)
-- [ ] **Módulo 1:** Clientes y Proveedores (Entidades)
-- [ ] **Módulo 2:** Inventario - Artículos
-- [ ] **Módulo 3:** Inventario - Almacenes y Movimientos
-- [ ] **Módulo 4:** Traspasos y Recepción de Traspasos
-- [ ] **Módulo 5:** Contabilidad - Cuentas Contables (Catálogo Mexicano)
-- [ ] **Módulo 6:** Manejo de estados en todas las vistas
-- [ ] **Módulo 7:** Reiniciar contenedores Docker
-- [ ] **Módulo 8:** Prueba final
+## FASE 1: Base de Datos (SQL)
+- [ ] Create entidad_cuentas_contables table
+- [ ] Add tipo_concepto field to transacciones table
+
+## FASE 2: Frontend (Vue)
+- [ ] Add "Configuración Contable" section in entity detail/edit view
+- [ ] Add "Concepto" field in invoice creation dialogs (compra/venta)
+
+## FASE 3: Backend (Node.js)
+- [ ] Create PUT /api/v1/entidades/:id/contabilidad endpoint
+- [ ] Modify generarAsientosContables to use entity-specific accounts
+- [ ] Create GET /api/v1/entidades/:id/contabilidad endpoint
+
+## FASE 4: Prueba y Cierre
+- [ ] Restart containers and test
+- [ ] Register entry in LOG_MODIFICACIONES.md

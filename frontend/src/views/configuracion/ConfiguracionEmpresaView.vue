@@ -26,6 +26,10 @@
               <v-icon left>mdi-lock-outline</v-icon>
               Certificados (CSD)
             </v-tab>
+            <v-tab key="cuentas">
+              <v-icon left>mdi-book-account-outline</v-icon>
+              Cuentas Contables Default
+            </v-tab>
           </v-tabs>
 
           <v-tabs-items v-model="tab">
@@ -302,6 +306,77 @@
                 </v-card-text>
               </v-card>
             </v-tab-item>
+
+            <!-- ========== PESTAÑA 5: CUENTAS CONTABLES DEFAULT ========== -->
+            <v-tab-item key="cuentas">
+              <v-card flat>
+                <v-card-text>
+                  <v-row>
+                    <v-col cols="12" md="6">
+                      <v-card outlined class="pa-4 mb-4">
+                        <v-card-title class="text-subtitle-1 font-weight-bold pa-0 mb-3">
+                          <v-icon small color="primary" class="mr-2">mdi-account-cash</v-icon>
+                          Cuentas de Clientes y Proveedores
+                        </v-card-title>
+                        <v-text-field
+                          v-model="cuentasContables.cuenta_cxc_default"
+                          label="CxC (Clientes) - Default: 1104"
+                          outlined dense
+                          placeholder="1104"
+                        ></v-text-field>
+                        <v-text-field
+                          v-model="cuentasContables.cuenta_cxp_default"
+                          label="CxP (Proveedores) - Default: 2101"
+                          outlined dense
+                          placeholder="2101"
+                        ></v-text-field>
+                        <v-text-field
+                          v-model="cuentasContables.cuenta_caja_default"
+                          label="Caja/Bancos - Default: 1101"
+                          outlined dense
+                          placeholder="1101"
+                        ></v-text-field>
+                      </v-card>
+                    </v-col>
+                    <v-col cols="12" md="6">
+                      <v-card outlined class="pa-4 mb-4">
+                        <v-card-title class="text-subtitle-1 font-weight-bold pa-0 mb-3">
+                          <v-icon small color="primary" class="mr-2">mdi-cash-register</v-icon>
+                          Cuentas de Resultados e Impuestos
+                        </v-card-title>
+                        <v-text-field
+                          v-model="cuentasContables.cuenta_ventas_default"
+                          label="Ventas (Ingresos) - Default: 4100"
+                          outlined dense
+                          placeholder="4100"
+                        ></v-text-field>
+                        <v-text-field
+                          v-model="cuentasContables.cuenta_compras_default"
+                          label="Compras (Gastos) - Default: 5300"
+                          outlined dense
+                          placeholder="5300"
+                        ></v-text-field>
+                        <v-text-field
+                          v-model="cuentasContables.cuenta_iva_trasladado"
+                          label="IVA Trasladado (por pagar) - Default: 2104"
+                          outlined dense
+                          placeholder="2104"
+                        ></v-text-field>
+                        <v-text-field
+                          v-model="cuentasContables.cuenta_iva_acreditable"
+                          label="IVA Acreditable - Default: 1107"
+                          outlined dense
+                          placeholder="1107"
+                        ></v-text-field>
+                      </v-card>
+                    </v-col>
+                  </v-row>
+                  <v-alert type="info" dense text class="mt-2">
+                    <small>Estas cuentas se usan por defecto al generar asientos contables automáticos en ventas, compras, cobros y pagos. Los códigos deben coincidir con el catálogo de cuentas contables.</small>
+                  </v-alert>
+                </v-card-text>
+              </v-card>
+            </v-tab-item>
           </v-tabs-items>
 
           <v-divider></v-divider>
@@ -389,6 +464,15 @@ export default {
         { text: '625 - Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas', value: '625' },
         { text: '626 - Régimen Simplificado de Confianza', value: '626' },
       ],
+      cuentasContables: {
+        cuenta_cxc_default: '',
+        cuenta_cxp_default: '',
+        cuenta_caja_default: '',
+        cuenta_ventas_default: '',
+        cuenta_compras_default: '',
+        cuenta_iva_trasladado: '',
+        cuenta_iva_acreditable: '',
+      },
       snackbar: {
         show: false,
         text: '',
@@ -408,6 +492,20 @@ export default {
         if (res.data.exito && res.data.datos) {
           Object.assign(this.empresa, res.data.datos)
         }
+        // Cargar configuración de cuentas contables
+        try {
+          const confRes = await axios.get('/api/v1/configuracion-sistema')
+          const confs = confRes.data?.datos || confRes.data || []
+          if (Array.isArray(confs)) {
+            confs.forEach(c => {
+              if (this.cuentasContables.hasOwnProperty(c.clave)) {
+                this.cuentasContables[c.clave] = c.valor
+              }
+            })
+          }
+        } catch (e) {
+          console.log('No se pudieron cargar las cuentas contables config:', e)
+        }
       } catch (err) {
         this.mostrarSnackbar('Error al cargar datos de la empresa', 'error')
       } finally {
@@ -419,6 +517,17 @@ export default {
       try {
         const res = await axios.put('/api/v1/configuracion/empresa', this.empresa)
         if (res.data.exito) {
+          // Guardar configuración de cuentas contables
+          try {
+            const updates = Object.entries(this.cuentasContables)
+              .filter(([k, v]) => v && v.trim())
+              .map(([clave, valor]) => ({ clave, valor }))
+            if (updates.length > 0) {
+              await axios.post('/api/v1/configuracion-sistema', { configuraciones: updates })
+            }
+          } catch (e) {
+            console.log('Error al guardar cuentas contables:', e)
+          }
           this.mostrarSnackbar('Datos de empresa guardados correctamente', 'success')
         }
       } catch (err) {
